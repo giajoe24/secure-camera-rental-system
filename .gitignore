@@ -1,0 +1,7 @@
+# 実行時に作られるもの(Git に入れない)
+data/
+exports/
+logs/
+__pycache__/
+*.pyc
+.venv/

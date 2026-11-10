@@ -1,0 +1,7 @@
+# Windows PC でデモ動作させるためのライブラリ
+#   pip install -r requirements.txt
+#
+# 動作確認したバージョン: customtkinter 6.0.0 / Pillow 12.3.0
+# (5.2 系でも使っている機能は同じなので動く想定です)
+customtkinter>=5.2.2
+Pillow>=10.0

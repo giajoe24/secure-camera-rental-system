@@ -1,0 +1,12 @@
+# Raspberry Pi(実機モード)用のライブラリ
+#   pip install -r requirements-pi.txt
+#
+# 先に apt で次を入れておいてください(README「Raspberry Pi への導入」参照)
+#   sudo apt install python3-tk python3-lgpio python3-gpiozero libusb-1.0-0 fonts-noto-cjk
+#
+# lgpio(gpiozero が Pi 4 / Debian 13 で使う GPIO 制御)は pip だとビルドが必要なため、
+# apt の python3-lgpio を使い、仮想環境は --system-site-packages 付きで作ります。
+
+-r requirements.txt
+gpiozero>=2.0
+nfcpy==1.0.4
