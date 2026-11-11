@@ -282,10 +282,13 @@ README.md「1. フォルダ構成」を参照してください。
 | カードの複製 | IDm / UID は暗号的な認証ではなく、複製カードやエミュレーターで偽装されうる | 社員証発行元の仕様で、認証付きの読み取り方式を検討。高いセキュリティが必要なら PIN 併用 |
 | ランダム UID | 一部のカード・スマートフォンは読むたびに UID が変わる | `check_card_reader.py` で同じカードを複数回読んで確認 |
 | 物理的な持ち出し | 保管庫が1つの場合、扉が開いている間は選んだ以外のカメラも取り出せる | 運用ルール、または将来カメラごとの扉・在庫センサー |
+| 返却は自己申告 | 返却は「記録 → 解錠」の順なので、扉を開けた後に実際にカメラを戻したかはシステムでは分からない | 施錠センサーで扉が閉まったことは確認できるが、カメラの有無は分からない。定期的な棚卸し、または将来の在庫センサー |
 | 時刻のずれ | Pi 4 には RTC がなく、NTP なしで起動すると時刻がずれる | NTP 同期の確認、または RTC モジュール追加 |
-| 解錠後に扉を閉め忘れ | 施錠に戻っても扉が開いたままなら意味がない | 扉センサー(リードスイッチ)の追加を将来検討 |
-| 電磁ロックの発熱 | 連続通電時間の定格超過 | `UNLOCK_SECONDS` を定格内に |
-| 停電 | 通電解錠型は停電時に開かない | 物理キーなどの非常手段 |
+| 解錠後に扉を閉め忘れ | 施錠に戻っても扉が開いたままなら意味がない | **対応済み(設定で有効化)**: LE-53 のカムスイッチを GPIO 入力で読み、完了画面で「閉めてください」と案内、待ち時間切れで「管理者に連絡」、ホーム画面でも警告 |
+| 電磁ロックの発熱 | LE-53 は連続通電で約 70℃(製品ページ)。連続通電時間の定格は未確認 | `UNLOCK_SECONDS` を仕様書の定格内に。やけど対策 |
+| 停電 | LE-53 は非通電で施錠のため、停電時は開かない。非常解錠機構の記載なし | 棚の物理キーなどの非常手段 |
+| カードリーダーの調達 | RC-S380 / RC-S380/S は生産終了。後継 RC-S300 は nfcpy の対応一覧にない | 予備機の確保。将来は RC-S300/S1 + PC/SC(pyscard)の読み取りクラスを追加 |
+| 公式サポート外の構成 | RC-S380 の公式対応 OS は Windows のみ。Pi では nfcpy(コミュニティ)で使う | 実機での読み取り確認を必須とする |
 | SD カード破損 | 電源断で DB が壊れる可能性 | 定期バックアップ(`data/` のコピー、または CSV 出力)。安全なシャットダウン |
 | 同時操作 | 管理ツールとアプリの同時書き込み | `BEGIN IMMEDIATE` + `timeout=5` で待機。失敗時は保存失敗として扱う |
 | ライブラリの保守 | nfcpy は 2021 年以降更新がない | 今回の環境で import できることは確認済み。将来は代替ライブラリも検討 |
@@ -304,6 +307,7 @@ README.md「1. フォルダ構成」を参照してください。
 | `camera_rental/rental_service.py` | 貸出・返却の手続き(DB記録 → 解錠)、解錠失敗の扱い、CSV |
 | `camera_rental/hardware/card_reader.py` | RC-S380(nfcpy)/ デモ |
 | `camera_rental/hardware/lock_controller.py` | gpiozero / デモ |
+| `camera_rental/hardware/lock_sensor.py` | 施錠センサー(LE-53 カムスイッチ)/ デモ |
 | `camera_rental/gui/*.py` | 画面 |
 | `manage_data.py` | 管理ツール |
 | `tools/check_card_reader.py` / `tools/check_lock.py` | 単体確認 |
@@ -326,6 +330,15 @@ README.md「1. フォルダ構成」を参照してください。
 
 ※ この環境の Python 3.13 には tkinter がなかったため、GUI は Python 3.12 で確認しました。
 
+追加で確認した環境(施錠センサー対応の追加時):
+
+| 項目 | 値 |
+|---|---|
+| OS | Windows 11 Pro(10.0.26200) |
+| Python | 3.14.0 |
+| 結果 | 自動テスト 88 件成功(gpiozero あり: スキップ 0 件 / gpiozero なし: スキップ 9 件)、`SELF TEST: OK` |
+| GUI | CustomTkinter で完了画面・ホーム画面を自動操作し、扉の閉め忘れ案内・ホームの警告・待ち時間切れの表示を画面キャプチャで確認 |
+
 ### 自動テスト(self_test.py)
 
 ```
@@ -340,6 +353,8 @@ SELF TEST: OK
 ```
 
 Python 3.12.3(gpiozero なし)では 78件中5件(GPIO 仮想ピン)がスキップ、残りは成功し `SELF TEST: OK`。
+
+(上は施錠センサー対応の前の結果です。追加後は 88 件。上の「追加で確認した環境」を参照)
 
 テストが本当に失敗を検出できるかも確認しました(わざとコードを壊して実行):
 
@@ -434,6 +449,8 @@ README.md「5. Raspberry Pi への導入」に詳しく書いています。順�
 | RC-S380 単体確認 | `tools/check_card_reader.py` | 実装済み・実機未確認 |
 | GPIO 単体確認 | `tools/check_lock.py` | 仮想ピン確認済み / 実機未確認 |
 | GPIO番号・解錠時間を設定で変更 | `config.LOCK_GPIO_PIN` / `UNLOCK_SECONDS` | PC確認済み |
+| 扉の閉め忘れ検出(LE-53 カムスイッチ) | `hardware/lock_sensor.py` / `DoneScreen` / `HomeScreen` | 仮想ピン・デモで確認済み / 実機未確認 |
+| 再試行ログに貸出・返却の区別を残す | `RentalService._unlock_after_record()` | PC確認済み |
 | エラー処理12項目 | `errors.py` の各例外 + 各画面 | 下表 |
 | 一般画面で例外文を出さない | `show_error()` / `report_callback_exception()` | PC確認済み |
 | 一般画面から管理機能を操作できない | GUI に登録・変更機能なし | 設計で保証 |
@@ -465,14 +482,15 @@ README.md「5. Raspberry Pi への導入」に詳しく書いています。順�
 
 | # | 項目 | 確認方法 |
 |---|---|---|
-| U1 | Windows / Python 3.14 / PowerShell での起動・テスト | `python self_test.py` → `python main.py --demo` |
+| U1 | Windows / Python 3.14 / PowerShell での起動・テスト | 自動テスト・GUI の画面の流れは確認済み(Windows 11 / Python 3.14.0)。PowerShell からの手動起動は未確認 |
 | U2 | Windows でのフォント(Yu Gothic UI)・表示倍率(125% 等)での見え方 | 実機の画面で確認。崩れる場合は `customtkinter.set_widget_scaling()` で調整 |
 | U3 | Raspberry Pi 4 / Debian 13 / Python 3.13.5 での起動 | README 5章 |
 | U4 | RC-S380 での社員証読み取り、IDの安定性、読み取り速度 | `tools/check_card_reader.py` |
 | U5 | 社員証の種類(FeliCa / MIFARE など)と、IDm/UID 照合で十分か | 社内のカード管理部門に確認 |
 | U6 | gpiozero + lgpio による実際の GPIO 出力 | `tools/check_lock.py` + LED / テスター |
-| U7 | リレー回路・電磁ロック LE-53 の動作、定格、連続通電時間 | データシート確認 + 実機 |
+| U7 | リレー回路・電磁ロック LE-53 の動作、連続通電時間の定格 | DC5V / 2W・連続通電で約 70℃ は製品ページで確認済み。通電時間の定格は仕様書 + 実機で確認 |
+| U7b | LE-53 カムスイッチの接点形式・定格・配線、通電だけでカムが動くか | 仕様書 + 実機(README 5-5) |
 | U8 | タッチモニターでの操作感(ボタンの大きさ、誤タッチ) | 実機で操作 |
-| U9 | 全画面表示と自動起動(Wayland / labwc 環境) | README 5-6 |
+| U9 | 全画面表示と自動起動(Wayland / labwc 環境) | README 5-7 |
 | U10 | 長期運用(ログのローテーション、DB サイズ) | 運用開始後に確認 |
 | U11 | nfcpy 1.0.4 の Python 3.13.5(Pi)での実動作 | import は 3.13.18 で確認済み。実読み取りは未確認 |

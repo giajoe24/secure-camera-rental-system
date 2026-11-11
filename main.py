@@ -7,6 +7,8 @@
     python main.py --real       実機モードで起動
     python main.py --demo --demo-unlock-fail
                                 デモモードで「解錠失敗」を再現する
+    python main.py --demo --demo-lock-sensor
+                                デモモードで施錠センサー(扉の開け閉め)を再現する
     python main.py --fullscreen 全画面で起動
 """
 
@@ -19,7 +21,7 @@ import config
 from camera_rental import errors
 from camera_rental.app_logging import setup_logging
 from camera_rental.database import Database
-from camera_rental.hardware import create_card_reader, create_lock_controller
+from camera_rental.hardware import create_card_reader, create_lock_controller, create_lock_sensor
 from camera_rental.rental_service import RentalService
 
 logger = logging.getLogger("main")
@@ -34,6 +36,8 @@ def parse_arguments():
 
     parser.add_argument("--demo-unlock-fail", action="store_true",
                         help="デモモードで解錠失敗を再現する(1回おきに失敗)")
+    parser.add_argument("--demo-lock-sensor", action="store_true",
+                        help="デモモードで施錠センサー(扉の開け閉め)を再現する")
     parser.add_argument("--fullscreen", action="store_true", help="全画面で起動する")
     return parser.parse_args()
 
@@ -79,6 +83,8 @@ def main():
     demo_mode = decide_demo_mode(arguments)
     if arguments.demo_unlock_fail:
         config.DEMO_SIMULATE_UNLOCK_FAILURE = True
+    if arguments.demo_lock_sensor:
+        config.DEMO_USE_LOCK_SENSOR = True
     if arguments.fullscreen:
         config.FULLSCREEN = True
 
@@ -104,10 +110,15 @@ def main():
 
     card_reader = create_card_reader(config, demo_mode)
     lock_controller = create_lock_controller(config, demo_mode)
+    lock_sensor = create_lock_sensor(config, demo_mode)
 
     if not lock_controller.is_ready:
         # アプリは起動し、ホーム画面で「貸出・返却停止中」を表示する
         logger.error("電磁ロックが使用できません: %s", lock_controller.not_ready_reason)
+
+    if not lock_sensor.is_available:
+        # センサーは補助の機能なので、使えなくても貸出・返却は続ける
+        logger.info("施錠センサーは使いません: %s", lock_sensor.not_available_reason)
 
     service = RentalService(
         database=database,
@@ -115,6 +126,7 @@ def main():
         rental_hours_options=config.RENTAL_HOURS_OPTIONS,
         unlock_seconds=config.UNLOCK_SECONDS,
         export_directory=config.EXPORT_DIRECTORY,
+        lock_sensor=lock_sensor,
     )
 
     app = CameraRentalApp(
@@ -130,6 +142,7 @@ def main():
     finally:
         # どんな終わり方をしても、電磁ロックを施錠状態に戻して GPIO を解放する
         lock_controller.close()
+        lock_sensor.close()
         logger.info("終了しました")
 
     return 0

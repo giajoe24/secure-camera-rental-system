@@ -11,6 +11,12 @@
 解錠に失敗したとき:
     → UnlockFailedScreen(もう一度開ける / 貸出を取り消す / 管理者に連絡する)
 
+施錠センサー(LE-53 のカムスイッチ)を使う設定のとき:
+    DoneScreen で解錠時間が終わっても扉が閉まっていなければ、
+    「扉を押して閉めてください」と案内し、閉まるまで待ちます。
+    待ち時間を過ぎたら「管理者に連絡してください」を表示します。
+    ホーム画面でも、扉が閉まっていなければ警告を出します。
+
 エラーや注意の表示:
     → MessageScreen
 
@@ -36,6 +42,7 @@ import customtkinter
 
 from camera_rental import errors
 from camera_rental.gui import theme
+from camera_rental.hardware.lock_sensor import LOCK_STATE_LOCKED, LOCK_STATE_UNLOCKED
 from camera_rental.gui.widgets import (
     CAMERA_STATUS_TAG_KIND,
     BaseScreen,
@@ -64,6 +71,35 @@ def step_names_for(purpose):
     if purpose == PURPOSE_BORROW:
         return BORROW_STEP_NAMES
     return RETURN_STEP_NAMES
+
+
+# 施錠センサーの状態を確認する間隔(ミリ秒)
+DOOR_POLL_INTERVAL_MS = 200
+
+
+def add_demo_door_buttons(parent, app):
+    """
+    デモモード専用: 扉を開けた・閉めたことにするボタン
+
+    デモ用の施錠センサー(open_door / close_door を持つもの)のときだけ作ります。
+    """
+    sensor = app.service.lock_sensor
+    if not (app.demo_mode and hasattr(sensor, "open_door")):
+        return None
+
+    demo_frame = customtkinter.CTkFrame(parent, fg_color=theme.WARNING_BACKGROUND,
+                                        corner_radius=theme.CORNER_RADIUS)
+
+    demo_label = label(demo_frame, "デモ用:扉の開け閉め", size=theme.FONT_SIZE_SMALL,
+                       bold=True, color=theme.WARNING_TEXT)
+    demo_label.pack(side="left", padx=16, pady=10)
+
+    for text, command in (("扉を閉めた", sensor.close_door), ("扉を開けた", sensor.open_door)):
+        demo_button = secondary_button(demo_frame, text, command, width=130, height=40)
+        demo_button.configure(font=theme.font(theme.FONT_SIZE_SMALL))
+        demo_button.pack(side="right", padx=(0, 12), pady=8)
+
+    return demo_frame
 
 
 # ======================================================
@@ -95,6 +131,18 @@ class HomeScreen(BaseScreen):
             )
             stop_label.pack(anchor="w")
 
+        # 施錠センサーがあれば、扉が閉まっていないときに警告を出す
+        self.door_warning_label = None
+        self.door_warning_is_shown = False
+        if self.app.service.has_lock_sensor:
+            self.door_warning_label = label(
+                self.title_area,
+                "扉が閉まっていません。扉を押して閉めてください。",
+                bold=True,
+                color=theme.ERROR_TEXT,
+            )
+            self._check_door()
+
         self.content_area.grid_columnconfigure(0, weight=1)
         self.content_area.grid_columnconfigure(1, weight=0)
         self.content_area.grid_rowconfigure(0, weight=1)
@@ -102,9 +150,26 @@ class HomeScreen(BaseScreen):
         self._build_camera_list()
         self._build_action_buttons()
 
+        demo_frame = add_demo_door_buttons(self, self.app)
+        if demo_frame is not None:
+            demo_frame.pack(side="bottom", fill="x", padx=theme.PAGE_PADDING_X, pady=(0, 8))
+
         # 左下: 履歴(戻る ボタンの位置。ホームには戻る先がないので補助機能を置く)
         from camera_rental.gui.screens_info import HistoryScreen
         self.add_back_button("履歴を見る", lambda: self.app.show_screen(HistoryScreen))
+
+    def _check_door(self):
+        """扉が閉まっていない間だけ警告を表示する(1秒ごとに確認)"""
+        door_is_open = self.app.service.read_lock_state() == LOCK_STATE_UNLOCKED
+
+        if door_is_open and not self.door_warning_is_shown:
+            self.door_warning_label.pack(anchor="w")
+            self.door_warning_is_shown = True
+        elif not door_is_open and self.door_warning_is_shown:
+            self.door_warning_label.pack_forget()
+            self.door_warning_is_shown = False
+
+        self.schedule(1000, self._check_door)
 
     def _build_camera_list(self):
         list_column = customtkinter.CTkFrame(self.content_area, fg_color="transparent")
@@ -568,6 +633,12 @@ class DoneScreen(BaseScreen):
 
     手続きはもう終わっているので、ここでは「次に利用者がすること」だけを大きく出します。
     扉が施錠に戻るまでの秒数を表示し、時間が来たらホームへ戻ります。
+
+    施錠センサーがある場合:
+        解錠時間が終わった時点で扉が閉まっていなければ、
+        「扉を押して閉めてください」に切り替えて、施錠されるまで待ちます。
+        (LE-53 はスナッチロックなので、扉を押して閉めるだけで施錠されます)
+        DOOR_CLOSE_WAIT_SECONDS を過ぎても閉まらなければ「管理者に連絡」を表示します。
     """
 
     # 扉が開いている間は、無操作タイムアウトではなくこの画面の秒読みを使う
@@ -575,8 +646,15 @@ class DoneScreen(BaseScreen):
 
     def __init__(self, parent, app, result):
         super().__init__(parent, app)
-        self.remaining_seconds = self.app.settings.UNLOCK_SECONDS
-        rental = result.rental
+        self.result = result
+        self.rental = result.rental
+
+        # 秒読みは「終了時刻」から計算する(after() の遅れで秒数がずれないように)
+        self.unlock_end_time = time.monotonic() + self.app.settings.UNLOCK_SECONDS
+        self.door_wait_end_time = None
+
+        # 解錠時間中に一度でも扉が開いたか(ログ用)
+        self.door_was_opened = False
 
         step_names = step_names_for(result.purpose)
         self.show_steps(step_names, len(step_names) - 1)
@@ -584,17 +662,17 @@ class DoneScreen(BaseScreen):
         if result.purpose == PURPOSE_BORROW:
             tag_text = "貸出完了"
             instruction = "扉が開きました。\nカメラを取り出して、扉を閉めてください。"
-            detail = f"{rental.camera_name}   返却予定  {format_for_display(rental.due_at)}"
+            detail = f"{self.rental.camera_name}   返却予定  {format_for_display(self.rental.due_at)}"
         else:
             tag_text = "返却完了"
             instruction = "扉が開きました。\nカメラを元の場所に置いて、扉を閉めてください。"
-            detail = rental.camera_name
+            detail = self.rental.camera_name
 
         tag = status_tag(self.title_area, tag_text, "success", width=120)
         tag.pack(anchor="w", pady=(0, 16))
 
-        instruction_label = label(self.title_area, instruction, size=theme.FONT_SIZE_LARGE + 4, bold=True)
-        instruction_label.pack(anchor="w")
+        self.instruction_label = label(self.title_area, instruction, size=theme.FONT_SIZE_LARGE + 4, bold=True)
+        self.instruction_label.pack(anchor="w")
 
         detail_label = label(self.content_area, detail, color=theme.TEXT_SUB)
         detail_label.pack(anchor="w")
@@ -602,19 +680,74 @@ class DoneScreen(BaseScreen):
         self.countdown_label = label(self.content_area, "", color=theme.TEXT_SUB)
         self.countdown_label.pack(anchor="w", pady=(6, 0))
 
+        demo_frame = add_demo_door_buttons(self.content_area, self.app)
+        if demo_frame is not None:
+            demo_frame.pack(side="bottom", fill="x")
+
         self.add_next_button("ホームに戻る", self.app.go_home)
 
-        self._count_down()
+        self._tick()
 
-    def _count_down(self):
-        if self.remaining_seconds <= 0:
+    def _tick(self):
+        """秒読みと、扉の状態の確認(DOOR_POLL_INTERVAL_MS ごと)"""
+        now = time.monotonic()
+        lock_state = self.app.service.read_lock_state()
+        if lock_state == LOCK_STATE_UNLOCKED:
+            self.door_was_opened = True
+
+        if self.door_wait_end_time is None:
+            remaining_seconds = self.unlock_end_time - now
+            if remaining_seconds > 0:
+                self.countdown_label.configure(
+                    text=f"{int(remaining_seconds + 0.99)} 秒後に扉のロックがかかり、ホームに戻ります。"
+                )
+                self.schedule(DOOR_POLL_INTERVAL_MS, self._tick)
+                return
+            self._on_unlock_time_over(lock_state)
+            return
+
+        self._wait_for_door_to_close(lock_state, now)
+
+    def _on_unlock_time_over(self, lock_state):
+        """解錠時間が終わったとき"""
+        if lock_state != LOCK_STATE_UNLOCKED:
+            # 施錠済み、またはセンサーなし(状態が分からない) → これまでどおりホームへ
+            if lock_state == LOCK_STATE_LOCKED and not self.door_was_opened:
+                logger.info("解錠時間中に扉は開けられませんでした: rental_id=%s", self.rental.id)
             self.app.go_home()
             return
-        self.countdown_label.configure(
-            text=f"{self.remaining_seconds} 秒後に扉のロックがかかり、ホームに戻ります。"
+
+        # 扉が開いたまま → 閉めてもらうよう案内を切り替える
+        logger.warning("解錠時間が終わっても扉が閉まっていません: rental_id=%s", self.rental.id)
+        self.door_wait_end_time = time.monotonic() + self.app.settings.DOOR_CLOSE_WAIT_SECONDS
+        self.instruction_label.configure(
+            text="扉が閉まっていません。\n扉を「カチッ」と音がするまで押して閉めてください。",
+            text_color=theme.ERROR_TEXT,
         )
-        self.remaining_seconds -= 1
-        self.schedule(1000, self._count_down)
+        self.schedule(DOOR_POLL_INTERVAL_MS, self._tick)
+
+    def _wait_for_door_to_close(self, lock_state, now):
+        """扉が閉まる(施錠される)のを待つ"""
+        if lock_state == LOCK_STATE_LOCKED:
+            logger.info("扉が閉まり、施錠されました: rental_id=%s", self.rental.id)
+            self.app.go_home()
+            return
+
+        remaining_seconds = self.door_wait_end_time - now
+        if remaining_seconds <= 0:
+            logger.error("扉が閉まらないまま待ち時間が過ぎました: rental_id=%s", self.rental.id)
+            self.app.show_screen(
+                MessageScreen,
+                level="error",
+                title="扉が閉まっていません",
+                message=f"扉を押して閉めてください。閉まらない場合は管理者に連絡してください(受付番号 {self.rental.id})。",
+            )
+            return
+
+        self.countdown_label.configure(
+            text=f"あと {int(remaining_seconds + 0.99)} 秒で閉まらない場合は、管理者に連絡してください。"
+        )
+        self.schedule(DOOR_POLL_INTERVAL_MS, self._tick)
 
 
 # ======================================================

@@ -19,6 +19,14 @@ import unittest
 from camera_rental import errors
 from camera_rental.hardware.card_reader import DemoCardReader, NfcCardReader
 from camera_rental.hardware.lock_controller import DemoLockController, GpioLockController
+from camera_rental.hardware.lock_sensor import (
+    LOCK_STATE_LOCKED,
+    LOCK_STATE_UNKNOWN,
+    LOCK_STATE_UNLOCKED,
+    DemoLockSensor,
+    GpioLockSensor,
+    NoLockSensor,
+)
 
 
 class DemoCardReaderTest(unittest.TestCase):
@@ -226,6 +234,78 @@ class GpioLockControllerMockTest(unittest.TestCase):
         self.assertNotEqual(lock.not_ready_reason, "")
         with self.assertRaises(errors.UnlockError):
             lock.unlock(1)
+
+
+class LockSensorWithoutGpioTest(unittest.TestCase):
+
+    def test_no_sensor_is_unknown(self):
+        sensor = NoLockSensor()
+        self.assertFalse(sensor.is_available)
+        self.assertEqual(sensor.read_state(), LOCK_STATE_UNKNOWN)
+
+    def test_demo_sensor_open_and_close(self):
+        sensor = DemoLockSensor()
+        self.assertEqual(sensor.read_state(), LOCK_STATE_LOCKED)
+        sensor.open_door()
+        self.assertEqual(sensor.read_state(), LOCK_STATE_UNLOCKED)
+        sensor.close_door()
+        self.assertEqual(sensor.read_state(), LOCK_STATE_LOCKED)
+
+
+@unittest.skipUnless(gpiozero_mock_available(), "gpiozero が入っていないためスキップ")
+class GpioLockSensorMockTest(unittest.TestCase):
+    """gpiozero の MockFactory でカムスイッチの読み取りを確認する(実機ではない)"""
+
+    def setUp(self):
+        from gpiozero import Device
+        from gpiozero.pins.mock import MockFactory
+
+        self.original_factory = Device.pin_factory
+        Device.pin_factory = MockFactory()
+        self.pin_factory = Device.pin_factory
+
+    def tearDown(self):
+        from gpiozero import Device
+
+        Device.pin_factory.reset()
+        Device.pin_factory = self.original_factory
+
+    def test_pull_up_contact_closed_when_locked(self):
+        """GPIO と GND の間のスイッチ: 施錠中は Low(接点が閉じる)"""
+        sensor = GpioLockSensor(gpio_pin=23, pull_up=True, locked_when_closed=True, bounce_seconds=None)
+        pin = self.pin_factory.pin(23)
+
+        pin.drive_low()
+        self.assertEqual(sensor.read_state(), LOCK_STATE_LOCKED)
+
+        pin.drive_high()
+        self.assertEqual(sensor.read_state(), LOCK_STATE_UNLOCKED)
+        sensor.close()
+
+    def test_contact_open_when_locked(self):
+        """NC 接点を使う配線: 施錠中は接点が開く(High)"""
+        sensor = GpioLockSensor(gpio_pin=23, pull_up=True, locked_when_closed=False, bounce_seconds=None)
+        pin = self.pin_factory.pin(23)
+
+        pin.drive_high()
+        self.assertEqual(sensor.read_state(), LOCK_STATE_LOCKED)
+
+        pin.drive_low()
+        self.assertEqual(sensor.read_state(), LOCK_STATE_UNLOCKED)
+        sensor.close()
+
+    def test_close_makes_state_unknown(self):
+        sensor = GpioLockSensor(gpio_pin=23, bounce_seconds=None)
+        sensor.close()
+        self.assertFalse(sensor.is_available)
+        self.assertEqual(sensor.read_state(), LOCK_STATE_UNKNOWN)
+
+    def test_invalid_pin_is_not_available(self):
+        """初期化に失敗しても例外は出さず「使えない」になる(貸出・返却を止めない)"""
+        sensor = GpioLockSensor(gpio_pin=999)
+        self.assertFalse(sensor.is_available)
+        self.assertNotEqual(sensor.not_available_reason, "")
+        self.assertEqual(sensor.read_state(), LOCK_STATE_UNKNOWN)
 
 
 if __name__ == "__main__":

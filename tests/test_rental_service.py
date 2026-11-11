@@ -17,6 +17,12 @@ from camera_rental.models import (
     END_REASON_CANCELLED,
 )
 from camera_rental.rental_service import PURPOSE_BORROW, PURPOSE_RETURN, RentalService, protect_csv_cell
+from camera_rental.hardware.lock_sensor import (
+    LOCK_STATE_LOCKED,
+    LOCK_STATE_UNKNOWN,
+    LOCK_STATE_UNLOCKED,
+    DemoLockSensor,
+)
 from tests.helpers import FIXED_NOW, FakeLockController, TemporaryDatabaseTestCase
 
 
@@ -30,7 +36,7 @@ class RentalServiceTestCase(TemporaryDatabaseTestCase):
         self.lock = FakeLockController()
         self.service = self.create_service(self.lock)
 
-    def create_service(self, lock, hours_options=(1, 2, 4, 8)):
+    def create_service(self, lock, hours_options=(1, 2, 4, 8), lock_sensor=None):
         return RentalService(
             database=self.database,
             lock_controller=lock,
@@ -38,6 +44,7 @@ class RentalServiceTestCase(TemporaryDatabaseTestCase):
             unlock_seconds=10,
             export_directory=self.temporary_directory / "exports",
             clock=lambda: FIXED_NOW,
+            lock_sensor=lock_sensor,
         )
 
 
@@ -277,6 +284,55 @@ class CsvExportTest(RentalServiceTestCase):
         self.assertEqual(protect_csv_cell("@SUM(A1)"), "'@SUM(A1)")
         self.assertEqual(protect_csv_cell("森 航太郎"), "森 航太郎")
         self.assertEqual(protect_csv_cell(15), 15)
+
+
+class RetryLogTest(RentalServiceTestCase):
+
+    def test_retry_log_records_purpose(self):
+        """再試行のログに、貸出・返却どちらの再試行かが残る"""
+        failing_lock = FakeLockController(fail_unlock=True)
+        service = self.create_service(failing_lock)
+        result = service.borrow_camera(self.user, self.camera.id, 1)
+
+        service.retry_unlock(result.rental, PURPOSE_BORROW)
+        failed_retry_log = self.database.list_unlock_logs()[0]
+        self.assertEqual(failed_retry_log["action"], "retry")
+        self.assertTrue(failed_retry_log["message"].startswith("貸出の再試行"))
+
+        failing_lock.fail_unlock = False
+        service.retry_unlock(result.rental, PURPOSE_BORROW)
+        success_retry_log = self.database.list_unlock_logs()[0]
+        self.assertEqual(success_retry_log["result"], "success")
+        self.assertEqual(success_retry_log["message"], "貸出の再試行")
+
+
+class LockSensorServiceTest(RentalServiceTestCase):
+
+    def test_without_sensor_state_is_unknown(self):
+        self.assertFalse(self.service.has_lock_sensor)
+        self.assertEqual(self.service.read_lock_state(), LOCK_STATE_UNKNOWN)
+
+    def test_reads_sensor_state(self):
+        sensor = DemoLockSensor()
+        service = self.create_service(self.lock, lock_sensor=sensor)
+        self.assertTrue(service.has_lock_sensor)
+        self.assertEqual(service.read_lock_state(), LOCK_STATE_LOCKED)
+        sensor.open_door()
+        self.assertEqual(service.read_lock_state(), LOCK_STATE_UNLOCKED)
+
+    def test_broken_sensor_does_not_stop_borrowing(self):
+        """センサーの読み取りで例外が出ても UNKNOWN を返し、貸出は続けられる"""
+
+        class BrokenSensor:
+            is_available = True
+
+            def read_state(self):
+                raise RuntimeError("テスト: センサー故障")
+
+        service = self.create_service(self.lock, lock_sensor=BrokenSensor())
+        self.assertEqual(service.read_lock_state(), LOCK_STATE_UNKNOWN)
+        result = service.borrow_camera(self.user, self.camera.id, 1)
+        self.assertTrue(result.unlocked)
 
 
 if __name__ == "__main__":

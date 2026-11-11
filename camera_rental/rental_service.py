@@ -22,6 +22,10 @@ GUI(画面)とデータベース・電磁ロックの「間」に立つクラス
                (カメラが保管庫に戻っていない可能性があるため、
                 次の人に貸し出されないようにする)
                「再試行」で解錠できたら「貸出可能」に戻す
+
+【施錠センサー(LE-53 のカムスイッチ)】
+    設定で有効にした場合だけ、扉が閉まって施錠されたかを読み取れます。
+    センサーは補助の機能なので、使えなくても貸出・返却は止めません。
 """
 
 import csv
@@ -38,6 +42,7 @@ from camera_rental.models import (
     END_REASON_CANCELLED,
     format_for_display,
 )
+from camera_rental.hardware.lock_sensor import LOCK_STATE_UNKNOWN, NoLockSensor
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +50,12 @@ logger = logging.getLogger(__name__)
 # 解錠の目的(ログに残す action の値と同じ)
 PURPOSE_BORROW = "borrow"
 PURPOSE_RETURN = "return"
+
+# 再試行のログに残す「何の再試行か」
+RETRY_PURPOSE_LABELS = {
+    PURPOSE_BORROW: "貸出の再試行",
+    PURPOSE_RETURN: "返却の再試行",
+}
 
 
 @dataclass
@@ -75,9 +86,13 @@ class RentalService:
         unlock_seconds,
         export_directory,
         clock=datetime.now,
+        lock_sensor=None,
     ):
         self.database = database
         self.lock_controller = lock_controller
+
+        # 施錠センサー(指定がなければ「使わない」)
+        self.lock_sensor = lock_sensor if lock_sensor is not None else NoLockSensor()
         self.rental_hours_options = list(rental_hours_options)
         self.unlock_seconds = unlock_seconds
         self.export_directory = Path(export_directory)
@@ -235,6 +250,28 @@ class RentalService:
         return self._unlock_after_record(returned_rental, PURPOSE_RETURN)
 
     # ==================================================
+    # 施錠センサー
+    # ==================================================
+
+    @property
+    def has_lock_sensor(self):
+        """施錠センサーが使えるか"""
+        return self.lock_sensor.is_available
+
+    def read_lock_state(self):
+        """
+        扉の施錠状態を返す(LOCK_STATE_LOCKED / UNLOCKED / UNKNOWN)
+
+        センサーの読み取りで想定外のエラーが出ても、画面を止めないよう
+        UNKNOWN を返します。
+        """
+        try:
+            return self.lock_sensor.read_state()
+        except Exception:
+            logger.exception("施錠センサーの読み取り中に想定外のエラーが発生しました")
+            return LOCK_STATE_UNKNOWN
+
+    # ==================================================
     # 解錠
     # ==================================================
 
@@ -252,6 +289,10 @@ class RentalService:
         """
         log_action = "retry" if is_retry else purpose
 
+        # 再試行のログは action が "retry" だけになるので、
+        # 貸出・返却のどちらの再試行かを message の先頭に残す
+        message_prefix = RETRY_PURPOSE_LABELS.get(purpose, "") if is_retry else ""
+
         try:
             self.lock_controller.unlock(self.unlock_seconds)
         except errors.UnlockError as error:
@@ -264,7 +305,7 @@ class RentalService:
             unlock_error = None
 
         if unlock_error is None:
-            self._save_unlock_log(log_action, "success", rental.id, "")
+            self._save_unlock_log(log_action, "success", rental.id, message_prefix)
 
             # 返却時の再試行で解錠できたら、点検中にしていたカメラを戻す
             if purpose == PURPOSE_RETURN and is_retry:
@@ -278,7 +319,10 @@ class RentalService:
             purpose,
             unlock_error.detail,
         )
-        self._save_unlock_log(log_action, "failed", rental.id, str(unlock_error.detail or ""))
+        failure_message = " ".join(
+            part for part in (message_prefix, str(unlock_error.detail or "")) if part
+        )
+        self._save_unlock_log(log_action, "failed", rental.id, failure_message)
 
         # 返却したのに扉が開かない = カメラが保管庫に戻っていない可能性がある
         # → 次の人に貸し出されないよう「点検中」にしておく
