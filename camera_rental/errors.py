@@ -39,20 +39,14 @@ class UnknownCardError(CameraRentalError):
     """登録されていない社員証がかざされた"""
 
     title = "登録されていない社員証です"
-    user_message = (
-        "この社員証は貸出システムに登録されていません。\n"
-        "利用登録が必要な場合は、管理者に連絡してください。"
-    )
+    user_message = "利用登録は管理者に依頼してください。"
 
 
 class UserDisabledError(CameraRentalError):
     """利用停止中の利用者"""
 
-    title = "現在この社員証は利用できません"
-    user_message = (
-        "この利用者は利用停止に設定されています。\n"
-        "詳しくは管理者に確認してください。"
-    )
+    title = "この社員証は利用停止中です"
+    user_message = "詳しくは管理者に確認してください。"
 
 
 class DuplicateUserError(CameraRentalError):
@@ -90,41 +84,29 @@ class CameraNotFoundError(CameraRentalError):
 class NoAvailableCameraError(CameraRentalError):
     """貸出できるカメラが1台もない"""
 
-    title = "貸出できるカメラがありません"
-    user_message = (
-        "現在、すべてのカメラが貸出中または点検中です。\n"
-        "「貸出状況」画面で返却予定日時を確認してください。"
-    )
+    title = "貸し出せるカメラがありません"
+    user_message = "ホーム画面で返却予定を確認してください。"
 
 
 class CameraNotAvailableError(CameraRentalError):
     """選んだカメラが貸出中・点検中になっていた"""
 
-    title = "このカメラは貸出できません"
-    user_message = (
-        "選択したカメラは、ほかの方が貸出中か点検中です。\n"
-        "お手数ですが、別のカメラを選んでください。"
-    )
+    title = "このカメラは貸し出せません"
+    user_message = "別のカメラを選んでください。"
 
 
 class UserHasActiveRentalError(CameraRentalError):
     """利用者が未返却のカメラを持っている"""
 
-    title = "返却されていないカメラがあります"
-    user_message = (
-        "前回貸出したカメラが、まだ返却されていません。\n"
-        "先にカメラを返却してから、もう一度貸出してください。"
-    )
+    title = "返却していないカメラがあります"
+    user_message = "先にカメラを返却してください。"
 
 
 class NoActiveRentalError(CameraRentalError):
     """返却しようとしたが、貸出中のカメラがない"""
 
     title = "返却するカメラがありません"
-    user_message = (
-        "この社員証で貸出中のカメラはありません。\n"
-        "別の方の社員証で貸出した場合は、その方の社員証で返却してください。"
-    )
+    user_message = "借りた本人の社員証でかざしてください。"
 
 
 class RentalNotFoundError(CameraRentalError):
@@ -148,22 +130,15 @@ class InvalidRentalHoursError(CameraRentalError):
 class DatabaseError(CameraRentalError):
     """SQLite への読み書きに失敗した"""
 
-    title = "データを保存できませんでした"
-    user_message = (
-        "記録の保存に失敗したため、処理を中止しました。\n"
-        "ロックは解錠していません。もう一度お試しください。\n"
-        "繰り返し発生する場合は管理者に連絡してください。"
-    )
+    title = "記録できませんでした"
+    user_message = "扉は開けていません。もう一度お試しください。"
 
 
 class CsvExportError(CameraRentalError):
     """CSV ファイルの保存に失敗した"""
 
-    title = "CSVファイルを保存できませんでした"
-    user_message = (
-        "保存先のフォルダに書き込めませんでした。\n"
-        "ファイルを開いたままにしていないか、空き容量があるか確認してください。"
-    )
+    title = "CSVを保存できませんでした"
+    user_message = "保存先のフォルダと空き容量を確認してください。"
 
 
 # --------------------------------------------------
@@ -173,35 +148,26 @@ class CsvExportError(CameraRentalError):
 class CardReaderNotConnectedError(CameraRentalError):
     """カードリーダーが見つからない・開けない"""
 
-    title = "カードリーダーが見つかりません"
-    user_message = (
-        "カードリーダーが接続されていないか、使用できない状態です。\n"
-        "管理者に連絡してください。"
-    )
+    title = "カードリーダーが使えません"
+    user_message = "管理者に連絡してください。"
 
 
 class CardReadError(CameraRentalError):
     """社員証の読み取りに失敗した"""
 
     title = "社員証を読み取れませんでした"
-    user_message = (
-        "社員証をカードリーダーの中央に、動かさずにかざしてください。\n"
-        "もう一度お試しください。"
-    )
+    user_message = "カードリーダーの中央に置いて、動かさずにお待ちください。"
 
 
 class LockInitError(CameraRentalError):
     """電磁ロック(GPIO)の初期化に失敗した"""
 
-    title = "電磁ロックが使用できません"
-    user_message = (
-        "電磁ロックの制御装置を準備できませんでした。\n"
-        "貸出・返却は停止しています。管理者に連絡してください。"
-    )
+    title = "扉のロックが使えません"
+    user_message = "貸出・返却を停止しています。管理者に連絡してください。"
 
 
 class UnlockError(CameraRentalError):
     """解錠に失敗した"""
 
-    title = "ロックを解錠できませんでした"
-    user_message = "もう一度解錠をお試しください。解決しない場合は管理者に連絡してください。"
+    title = "扉を開けられませんでした"
+    user_message = "もう一度お試しください。"

@@ -1,19 +1,23 @@
 """
 貸出・返却の流れの画面
 
-貸出:
-    HomeScreen → CardScanScreen → CameraSelectScreen → BorrowConfirmScreen
-               → UnlockedScreen → CompleteScreen → HomeScreen
+貸出(5手順):
+    HomeScreen → CardScanScreen → CameraSelectScreen → HoursSelectScreen
+               → BorrowConfirmScreen → DoneScreen → HomeScreen
 
-返却:
-    HomeScreen → CardScanScreen → ReturnConfirmScreen
-               → UnlockedScreen → CompleteScreen → HomeScreen
+返却(3手順):
+    HomeScreen → CardScanScreen → ReturnConfirmScreen → DoneScreen → HomeScreen
 
 解錠に失敗したとき:
-    → UnlockFailedScreen(再試行 / 貸出取消 / 管理者へ連絡)
+    → UnlockFailedScreen(もう一度開ける / 貸出を取り消す / 管理者に連絡する)
 
 エラーや注意の表示:
     → MessageScreen
+
+【1画面1操作】
+    カメラ選択と貸出時間の選択は、画面を分けています。
+    1画面でやることを1つに絞ると、「何を押せばいいか」で迷わなくなるためです。
+    選択肢は押した時点で次の画面へ進みます(券売機と同じ操作)。
 
 【画面とスレッドのルール】
     社員証の読み取りは「待つ」処理なので、別スレッドで行います。
@@ -33,17 +37,17 @@ import customtkinter
 from camera_rental import errors
 from camera_rental.gui import theme
 from camera_rental.gui.widgets import (
-    CAMERA_STATUS_BADGE_KIND,
+    CAMERA_STATUS_TAG_KIND,
     BaseScreen,
     InfoTable,
-    MessagePanel,
     Pager,
-    StatusBadge,
-    circle_icon,
+    choice_button,
+    horizontal_line,
     label,
     primary_button,
     secondary_button,
     set_button_enabled,
+    status_tag,
 )
 from camera_rental.models import format_for_display
 from camera_rental.rental_service import PURPOSE_BORROW, PURPOSE_RETURN
@@ -51,17 +55,15 @@ from camera_rental.rental_service import PURPOSE_BORROW, PURPOSE_RETURN
 logger = logging.getLogger(__name__)
 
 
-# 画面上部に出す手順の表示
-BORROW_STEPS = 4
-RETURN_STEPS = 3
+# 画面上部に出す手順の名前
+BORROW_STEP_NAMES = ["社員証", "カメラ", "貸出時間", "確認", "完了"]
+RETURN_STEP_NAMES = ["社員証", "確認", "完了"]
 
 
-def borrow_step_text(step_number, step_name):
-    return f"貸出  {step_number} / {BORROW_STEPS}  {step_name}"
-
-
-def return_step_text(step_number, step_name):
-    return f"返却  {step_number} / {RETURN_STEPS}  {step_name}"
+def step_names_for(purpose):
+    if purpose == PURPOSE_BORROW:
+        return BORROW_STEP_NAMES
+    return RETURN_STEP_NAMES
 
 
 # ======================================================
@@ -69,101 +71,120 @@ def return_step_text(step_number, step_name):
 # ======================================================
 
 class HomeScreen(BaseScreen):
-    """最初の画面: 貸出 / 返却 を選ぶ"""
+    """
+    最初の画面
+
+    配置:
+        左: カメラごとの状態の一覧(どれが借りられるか一目で分かるように)
+        右: 「カメラを借りる」「カメラを返す」の2つだけ
+    """
+
+    CAMERAS_PER_PAGE = 5
 
     def __init__(self, parent, app):
         super().__init__(parent, app)
 
-        self.set_title("ご用件を選んでください")
+        self.lock_is_ready = self.app.service.lock_controller.is_ready
 
-        lock_is_ready = self.app.service.lock_controller.is_ready
-        if not lock_is_ready:
-            warning_panel = MessagePanel(
-                self.content_area,
-                kind="error",
-                title="電磁ロックが使用できないため、貸出・返却を停止しています",
-                message="管理者に連絡してください。(貸出状況と履歴は確認できます)",
+        if not self.lock_is_ready:
+            stop_label = label(
+                self.title_area,
+                "扉のロックが使えないため、貸出・返却を停止しています。管理者に連絡してください。",
+                bold=True,
+                color=theme.ERROR_TEXT,
             )
-            warning_panel.pack(fill="x", pady=(0, 16))
+            stop_label.pack(anchor="w")
 
-        self._build_summary()
-        self._build_main_buttons(enabled=lock_is_ready)
-        self._build_bottom_buttons()
+        self.content_area.grid_columnconfigure(0, weight=1)
+        self.content_area.grid_columnconfigure(1, weight=0)
+        self.content_area.grid_rowconfigure(0, weight=1)
 
-    def _build_summary(self):
-        """カメラの台数を状態ごとに表示する"""
-        summary_frame = customtkinter.CTkFrame(self.content_area, fg_color="transparent")
-        summary_frame.pack(fill="x", pady=(0, 16))
+        self._build_camera_list()
+        self._build_action_buttons()
+
+        # 左下: 履歴(戻る ボタンの位置。ホームには戻る先がないので補助機能を置く)
+        from camera_rental.gui.screens_info import HistoryScreen
+        self.add_back_button("履歴を見る", lambda: self.app.show_screen(HistoryScreen))
+
+    def _build_camera_list(self):
+        list_column = customtkinter.CTkFrame(self.content_area, fg_color="transparent")
+        list_column.grid(row=0, column=0, sticky="nsew", padx=(0, 32))
+
+        heading = label(list_column, "カメラの状態", size=theme.FONT_SIZE_TITLE - 4, bold=True)
+        heading.pack(anchor="w", pady=(0, 8))
 
         try:
             status_rows = self.app.service.list_camera_statuses()
         except errors.CameraRentalError as error:
-            # ホーム画面でエラー画面に飛ばすと、戻ってもまたエラーになるので、ここに表示する
-            error_label = label(summary_frame, f"{error.title}: {error.user_message}", color=theme.ERROR_TEXT)
+            # ホームでエラー画面に飛ばすと、戻ってもまたエラーになるので、ここに表示する
+            error_label = label(list_column, f"{error.title}。{error.user_message}", color=theme.ERROR_TEXT)
             error_label.pack(anchor="w")
             return
 
-        counts = {"available": 0, "rented": 0, "maintenance": 0}
-        for row in status_rows:
-            if row.camera.status in counts:
-                counts[row.camera.status] += 1
+        if not status_rows:
+            empty_label = label(list_column, "カメラが登録されていません。", color=theme.TEXT_SUB)
+            empty_label.pack(anchor="w")
+            return
 
-        caption = label(summary_frame, "現在のカメラ:", color=theme.TEXT_SUB)
-        caption.pack(side="left", padx=(0, 12))
+        self.now = self.app.service.now()
+        pager = Pager(list_column, status_rows, self.CAMERAS_PER_PAGE, self._render_camera_rows)
+        pager.pack(fill="both", expand=True)
 
-        status_texts = [
-            ("available", "貸出可能"),
-            ("rented", "貸出中"),
-            ("maintenance", "点検中"),
-        ]
-        for status, status_name in status_texts:
-            badge = StatusBadge(
-                summary_frame,
-                f"{status_name} {counts[status]}台",
-                CAMERA_STATUS_BADGE_KIND[status],
-            )
-            badge.pack(side="left", padx=(0, 8))
+    def _render_camera_rows(self, list_frame, rows_on_page):
+        """カメラ1台につき1行: 名前 / 状態 / 返却予定"""
+        table = customtkinter.CTkFrame(list_frame, fg_color="transparent")
+        table.pack(fill="x")
+        table.grid_columnconfigure(0, weight=1)
 
-    def _build_main_buttons(self, enabled):
-        """大きな「借りる」「返す」ボタン"""
-        tiles_frame = customtkinter.CTkFrame(self.content_area, fg_color="transparent")
-        tiles_frame.pack(fill="both", expand=True)
-        tiles_frame.grid_columnconfigure(0, weight=1, uniform="tile")
-        tiles_frame.grid_columnconfigure(1, weight=1, uniform="tile")
-        tiles_frame.grid_rowconfigure(0, weight=1)
+        top_line = horizontal_line(table)
+        top_line.grid(row=0, column=0, columnspan=3, sticky="ew")
 
-        borrow_button = primary_button(tiles_frame, "カメラを借りる\n(貸出)", self._start_borrow,
-                                       height=theme.TILE_HEIGHT)
-        borrow_button.configure(font=theme.font(theme.FONT_SIZE_TILE, bold=True))
-        borrow_button.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+        for index, status_row in enumerate(rows_on_page):
+            camera = status_row.camera
+            rental = status_row.rental
+            grid_row = index * 2 + 1
 
-        return_button = primary_button(tiles_frame, "カメラを返す\n(返却)", self._start_return,
-                                       height=theme.TILE_HEIGHT)
-        return_button.configure(font=theme.font(theme.FONT_SIZE_TILE, bold=True))
-        return_button.grid(row=0, column=1, sticky="nsew", padx=(12, 0))
+            name_label = label(table, camera.name, bold=True)
+            name_label.grid(row=grid_row, column=0, sticky="w", pady=14)
 
-        if not enabled:
+            tag = status_tag(table, camera.status_label, CAMERA_STATUS_TAG_KIND.get(camera.status, "neutral"))
+            tag.grid(row=grid_row, column=1, sticky="w", padx=16)
+
+            detail_text, detail_color = self._detail_for(rental)
+            detail_label = label(table, detail_text, size=theme.FONT_SIZE_SMALL, color=detail_color)
+            detail_label.configure(width=130)
+            detail_label.grid(row=grid_row, column=2, sticky="w")
+
+            line = horizontal_line(table)
+            line.grid(row=grid_row + 1, column=0, columnspan=3, sticky="ew")
+
+    def _detail_for(self, rental):
+        """貸出中なら返却予定を表示する(延滞なら赤)"""
+        if rental is None:
+            return "", theme.TEXT_SUB
+        # 一覧の幅に収まるよう、年は省いて「11/12 01:49」の形にする
+        due_text = rental.due_at.strftime("%m/%d %H:%M")
+        if rental.is_overdue(self.now):
+            return f"延滞 {due_text}", theme.ERROR_TEXT
+        return f"返却 {due_text}", theme.TEXT_SUB
+
+    def _build_action_buttons(self):
+        button_column = customtkinter.CTkFrame(self.content_area, fg_color="transparent", width=280)
+        button_column.grid(row=0, column=1, sticky="ns")
+
+        borrow_button = primary_button(button_column, "カメラを借りる", self._start_borrow,
+                                       width=280, height=130)
+        borrow_button.configure(font=theme.font(theme.FONT_SIZE_LARGE - 2, bold=True))
+        borrow_button.pack(pady=(44, 20))
+
+        return_button = primary_button(button_column, "カメラを返す", self._start_return,
+                                       width=280, height=130)
+        return_button.configure(font=theme.font(theme.FONT_SIZE_LARGE - 2, bold=True))
+        return_button.pack()
+
+        if not self.lock_is_ready:
             set_button_enabled(borrow_button, False)
             set_button_enabled(return_button, False)
-
-        guide_label = label(
-            self.content_area,
-            "ボタンを押したあと、社員証をカードリーダーにかざします。",
-            color=theme.TEXT_SUB,
-        )
-        guide_label.pack(anchor="w", pady=(12, 0))
-
-    def _build_bottom_buttons(self):
-        # 画面の切り替え先は、ここで読み込む(ファイル同士の循環 import を避けるため)
-        from camera_rental.gui.screens_info import HistoryScreen, StatusScreen
-
-        status_button = secondary_button(self.bottom_area, "貸出状況を見る",
-                                         lambda: self.app.show_screen(StatusScreen))
-        status_button.pack(side="left")
-
-        history_button = secondary_button(self.bottom_area, "履歴を見る",
-                                          lambda: self.app.show_screen(HistoryScreen))
-        history_button.pack(side="left", padx=(12, 0))
 
     def _start_borrow(self):
         # 社員証をかざしてもらう前に、借りられるカメラがあるか確認する
@@ -202,17 +223,16 @@ class CardScanScreen(BaseScreen):
         self.purpose = purpose
         self.timeout_seconds = self.app.settings.CARD_READ_TIMEOUT_SECONDS
 
-        if purpose == PURPOSE_BORROW:
-            self.set_title("社員証をかざしてください", step_text=borrow_step_text(1, "本人確認"))
-        else:
-            self.set_title("社員証をかざしてください", step_text=return_step_text(1, "本人確認"))
+        self.show_steps(step_names_for(purpose), 0)
+        self.set_title("社員証をカードリーダーにかざしてください")
 
-        self._build_scan_panel()
+        self.remaining_label = label(self.title_area, "", color=theme.TEXT_SUB)
+        self.remaining_label.pack(anchor="w", pady=(6, 0))
+
         if self.app.demo_mode:
             self._build_demo_buttons()
 
-        cancel_button = secondary_button(self.bottom_area, "やめる", self.app.go_home)
-        cancel_button.pack(side="left")
+        self.add_back_button("やめる", self.app.go_home)
 
         # 別スレッドとのやり取りに使うもの
         self.cancel_event = threading.Event()
@@ -221,49 +241,6 @@ class CardScanScreen(BaseScreen):
 
         self._start_reading()
 
-    def _build_scan_panel(self):
-        """薄い赤背景の、読み取り案内パネル"""
-        scan_panel = customtkinter.CTkFrame(
-            self.content_area,
-            fg_color=theme.BRAND_RED_LIGHT,
-            border_color=theme.BRAND_RED_BORDER,
-            border_width=2,
-            corner_radius=theme.CORNER_RADIUS,
-        )
-        scan_panel.pack(fill="both", expand=True)
-
-        inner_frame = customtkinter.CTkFrame(scan_panel, fg_color="transparent")
-        inner_frame.place(relx=0.5, rely=0.5, anchor="center")
-
-        # カードの形をした簡単な図(画像を使わずに枠で表現)
-        card_shape = customtkinter.CTkFrame(
-            inner_frame,
-            width=150,
-            height=95,
-            fg_color=theme.WHITE,
-            border_color=theme.BRAND_RED,
-            border_width=3,
-            corner_radius=12,
-        )
-        card_shape.pack(pady=(0, 16))
-        card_shape.pack_propagate(False)
-        card_text = label(card_shape, "社員証", size=theme.FONT_SIZE_HEADING, bold=True,
-                          color=theme.BRAND_RED, anchor="center")
-        card_text.pack(expand=True)
-
-        instruction_label = label(
-            inner_frame,
-            "カードリーダーの上に、社員証を動かさずに置いてください",
-            size=theme.FONT_SIZE_HEADING,
-            bold=True,
-            anchor="center",
-            justify="center",
-        )
-        instruction_label.pack()
-
-        self.status_label = label(inner_frame, "読み取り待ち…", color=theme.TEXT_SUB, anchor="center")
-        self.status_label.pack(pady=(8, 0))
-
     def _build_demo_buttons(self):
         """デモモード専用: どの社員証をかざしたことにするか選ぶボタン"""
         demo_frame = customtkinter.CTkFrame(
@@ -271,30 +248,24 @@ class CardScanScreen(BaseScreen):
             fg_color=theme.WARNING_BACKGROUND,
             corner_radius=theme.CORNER_RADIUS,
         )
-        demo_frame.pack(fill="x", pady=(12, 0))
+        demo_frame.pack(side="bottom", fill="x")
 
-        demo_label = label(demo_frame, "デモ: かざす社員証を選んでください",
+        demo_label = label(demo_frame, "デモ用:かざす社員証を選ぶ",
                            size=theme.FONT_SIZE_SMALL, bold=True, color=theme.WARNING_TEXT)
-        demo_label.pack(anchor="w", padx=16, pady=(10, 4))
+        demo_label.pack(anchor="w", padx=16, pady=(10, 6))
 
         buttons_frame = customtkinter.CTkFrame(demo_frame, fg_color="transparent")
-        buttons_frame.pack(fill="x", padx=16, pady=(0, 12))
+        buttons_frame.pack(fill="x", padx=16, pady=(0, 14))
 
         for display_name, card_id in self.app.card_reader.demo_cards:
-            demo_button = customtkinter.CTkButton(
+            demo_button = secondary_button(
                 buttons_frame,
-                text=display_name,
+                display_name,
+                lambda selected_card_id=card_id: self.app.card_reader.simulate_touch(selected_card_id),
+                width=160,
                 height=48,
-                width=170,
-                corner_radius=10,
-                fg_color=theme.WHITE,
-                hover_color=theme.SECONDARY_BUTTON,
-                text_color=theme.TEXT_MAIN,
-                border_color=theme.WARNING_BORDER,
-                border_width=2,
-                font=theme.font(theme.FONT_SIZE_SMALL, bold=True),
-                command=lambda selected_card_id=card_id: self.app.card_reader.simulate_touch(selected_card_id),
             )
+            demo_button.configure(font=theme.font(theme.FONT_SIZE_SMALL))
             demo_button.pack(side="left", padx=(0, 8))
 
     # ---------- 読み取り ----------
@@ -306,6 +277,7 @@ class CardScanScreen(BaseScreen):
             daemon=True,
         )
         reader_thread.start()
+        self._update_remaining_text()
         self.schedule(self.POLL_INTERVAL_MS, self._check_read_result)
 
     def _read_card_in_background(self):
@@ -325,12 +297,12 @@ class CardScanScreen(BaseScreen):
         try:
             result_type, result_value = self.result_queue.get_nowait()
         except queue.Empty:
-            self._update_waiting_text()
+            self._update_remaining_text()
             self.schedule(self.POLL_INTERVAL_MS, self._check_read_result)
             return
 
         if result_type == "error":
-            self._show_read_error(result_value)
+            self.app.show_error(result_value, retry_action=self._retry_scan, retry_label="もう一度かざす")
             return
 
         card_id = result_value
@@ -342,26 +314,22 @@ class CardScanScreen(BaseScreen):
 
         self._handle_card(card_id)
 
-    def _update_waiting_text(self):
+    def _update_remaining_text(self):
         elapsed_seconds = time.monotonic() - self.start_time
         remaining_seconds = max(0, int(self.timeout_seconds - elapsed_seconds))
-        dot_count = int(elapsed_seconds * 2) % 4
-        dots = "・" * dot_count
-        self.status_label.configure(text=f"読み取り待ち{dots}  (あと {remaining_seconds} 秒)")
+        self.remaining_label.configure(text=f"読み取るまで動かさずにお待ちください(残り {remaining_seconds} 秒)")
 
     def _retry_scan(self):
         self.app.show_screen(CardScanScreen, purpose=self.purpose)
-
-    def _show_read_error(self, error):
-        self.app.show_error(error, retry_action=self._retry_scan)
 
     def _show_timeout(self):
         self.app.show_screen(
             MessageScreen,
             level="warning",
-            title="社員証が確認できませんでした",
-            message="読み取りの待ち時間が終わりました。\nもう一度お試しください。",
+            title="社員証を確認できませんでした",
+            message="待ち時間が過ぎました。もう一度かざしてください。",
             retry_action=self._retry_scan,
+            retry_label="もう一度かざす",
         )
 
     # ---------- 読み取り後 ----------
@@ -380,7 +348,7 @@ class CardScanScreen(BaseScreen):
 
         except (errors.UnknownCardError, errors.UserDisabledError, errors.CardReadError) as error:
             # 別の社員証でやり直せるように「もう一度かざす」を出す
-            self.app.show_error(error, retry_action=self._retry_scan)
+            self.app.show_error(error, retry_action=self._retry_scan, retry_label="もう一度かざす")
         except Exception as error:
             self.app.show_error(error)
 
@@ -391,183 +359,91 @@ class CardScanScreen(BaseScreen):
 
 
 # ======================================================
-# 貸出: カメラと貸出時間の選択
+# 貸出: カメラの選択
 # ======================================================
 
 class CameraSelectScreen(BaseScreen):
-    """カメラと貸出時間を選ぶ画面"""
+    """借りるカメラを選ぶ画面(押すとすぐ次へ進む)"""
 
     CAMERAS_PER_PAGE = 4
 
-    def __init__(self, parent, app, user, cameras, selected_camera_id=None, selected_hours=None):
+    def __init__(self, parent, app, user, cameras):
         super().__init__(parent, app)
         self.user = user
         self.cameras = cameras
-        self.selected_camera_id = selected_camera_id
-        self.selected_hours = selected_hours
 
-        self.camera_buttons = {}
-        self.hours_buttons = {}
+        self.show_steps(BORROW_STEP_NAMES, 1)
+        self.set_title("借りるカメラを選んでください", note=f"{user.name} さん(社員番号 {user.employee_number})")
 
-        self.set_title(
-            "カメラと貸出時間を選んでください",
-            step_text=borrow_step_text(2, "カメラと時間の選択"),
-            subtitle=f"{user.name} さん(社員番号 {user.employee_number})",
-        )
-
-        self.content_area.grid_columnconfigure(0, weight=3, uniform="column")
-        self.content_area.grid_columnconfigure(1, weight=2, uniform="column")
-        self.content_area.grid_rowconfigure(0, weight=1)
-
-        self._build_camera_list()
-        self._build_hours_selector()
-        self._build_bottom_buttons()
-
-        self._refresh_selection()
-        self._update_due_text_regularly()
-
-    def _build_camera_list(self):
-        camera_column = customtkinter.CTkFrame(self.content_area, fg_color="transparent")
-        camera_column.grid(row=0, column=0, sticky="nsew", padx=(0, 16))
-
-        heading = label(camera_column, "1. カメラ", size=theme.FONT_SIZE_HEADING, bold=True)
-        heading.pack(anchor="w", pady=(0, 8))
-
-        pager = Pager(camera_column, self.cameras, self.CAMERAS_PER_PAGE, self._render_camera_page)
+        pager = Pager(self.content_area, cameras, self.CAMERAS_PER_PAGE, self._render_cameras)
         pager.pack(fill="both", expand=True)
 
-    def _render_camera_page(self, list_frame, cameras_on_page):
-        """ページに表示するカメラのボタンを作る(ページ送りのたびに呼ばれる)"""
-        self.camera_buttons = {}
+        self.add_back_button("やめる", self.app.go_home)
+
+    def _render_cameras(self, list_frame, cameras_on_page):
         for camera in cameras_on_page:
-            camera_button = customtkinter.CTkButton(
+            button = choice_button(
                 list_frame,
-                text=camera.name,
-                height=58,
-                anchor="w",
-                corner_radius=12,
-                border_width=2,
-                font=theme.font(theme.FONT_SIZE_BODY, bold=True),
-                command=lambda camera_id=camera.id: self._select_camera(camera_id),
+                f"   {camera.name}",
+                command=lambda selected_camera=camera: self._select(selected_camera),
             )
-            camera_button.pack(fill="x", pady=4)
-            self.camera_buttons[camera.id] = camera_button
-        self._refresh_selection()
+            button.pack(fill="x", pady=(0, 8))
 
-    def _build_hours_selector(self):
-        hours_column = customtkinter.CTkFrame(self.content_area, fg_color="transparent")
-        hours_column.grid(row=0, column=1, sticky="nsew")
+    def _select(self, camera):
+        self.app.show_screen(HoursSelectScreen, user=self.user, camera=camera)
 
-        heading = label(hours_column, "2. 貸出時間", size=theme.FONT_SIZE_HEADING, bold=True)
-        heading.pack(anchor="w", pady=(0, 8))
 
-        buttons_grid = customtkinter.CTkFrame(hours_column, fg_color="transparent")
-        buttons_grid.pack(fill="x")
-        buttons_grid.grid_columnconfigure(0, weight=1, uniform="hours")
-        buttons_grid.grid_columnconfigure(1, weight=1, uniform="hours")
+# ======================================================
+# 貸出: 貸出時間の選択
+# ======================================================
 
-        # 貸出時間の候補は config.RENTAL_HOURS_OPTIONS から作る(2列で並べる)
-        for index, hours in enumerate(self.app.service.rental_hours_options):
-            hours_button = customtkinter.CTkButton(
-                buttons_grid,
-                text=f"{hours}時間",
-                height=64,
-                corner_radius=12,
-                border_width=2,
-                font=theme.font(theme.FONT_SIZE_BUTTON, bold=True),
-                command=lambda selected=hours: self._select_hours(selected),
+class HoursSelectScreen(BaseScreen):
+    """貸出時間を選ぶ画面(押すとすぐ次へ進む)"""
+
+    def __init__(self, parent, app, user, camera):
+        super().__init__(parent, app)
+        self.user = user
+        self.camera = camera
+
+        self.show_steps(BORROW_STEP_NAMES, 2)
+        self.set_title("貸出時間を選んでください", note=camera.name)
+
+        # 返却予定の時刻は、ボタンの文字の中に書く(押す前に分かるように)
+        self.hours_buttons = {}
+        for hours in self.app.service.rental_hours_options:
+            button = choice_button(
+                self.content_area,
+                "",
+                command=lambda selected_hours=hours: self._select(selected_hours),
             )
-            row_number = index // 2
-            column_number = index % 2
-            hours_button.grid(row=row_number, column=column_number, sticky="ew", padx=4, pady=4)
-            self.hours_buttons[hours] = hours_button
+            button.pack(fill="x", pady=(0, 8))
+            self.hours_buttons[hours] = button
 
-        due_caption = label(hours_column, "返却予定日時", color=theme.TEXT_SUB)
-        due_caption.pack(anchor="w", pady=(20, 0))
+        self._update_button_texts()
+        self.add_back_button("戻る", self._go_back)
 
-        self.due_label = label(hours_column, "-", size=theme.FONT_SIZE_HEADING, bold=True)
-        self.due_label.pack(anchor="w")
-
-    def _build_bottom_buttons(self):
-        cancel_button = secondary_button(self.bottom_area, "やめる", self.app.go_home)
-        cancel_button.pack(side="left")
-
-        self.next_button = primary_button(self.bottom_area, "確認へ進む", self._go_to_confirm)
-        self.next_button.pack(side="right")
-
-    # ---------- 選択 ----------
-
-    def _select_camera(self, camera_id):
-        self.selected_camera_id = camera_id
-        self._refresh_selection()
-
-    def _select_hours(self, hours):
-        self.selected_hours = hours
-        self._refresh_selection()
-
-    def _refresh_selection(self):
-        """選ばれているボタンの見た目を変え、「確認へ進む」の有効/無効を切り替える"""
-        for camera_id, button in self.camera_buttons.items():
-            self._apply_toggle_style(button, camera_id == self.selected_camera_id)
-
+    def _update_button_texts(self):
+        """返却予定を最新の時刻で計算し直す(画面を開いたまま時間が過ぎても古くならない)"""
         for hours, button in self.hours_buttons.items():
-            self._apply_toggle_style(button, hours == self.selected_hours)
+            due_at = self.app.service.calculate_due_at(hours)
+            button.configure(text=f"   {hours}時間      返却予定  {format_for_display(due_at)}")
+        self.schedule(15_000, self._update_button_texts)
 
-        self._update_due_text()
+    def _select(self, hours):
+        self.app.show_screen(BorrowConfirmScreen, user=self.user, camera=self.camera, rental_hours=hours)
 
-        if hasattr(self, "next_button"):
-            both_selected = self.selected_camera_id is not None and self.selected_hours is not None
-            set_button_enabled(self.next_button, both_selected)
+    def _go_back(self):
+        go_to_camera_select(self.app, self.user)
 
-    @staticmethod
-    def _apply_toggle_style(button, is_selected):
-        # 色だけでなく「✓」を付けて、選ばれていることが分かるようにする
-        base_text = button.cget("text").removeprefix("✓ ")
-        if is_selected:
-            button.configure(
-                text=f"✓ {base_text}",
-                fg_color=theme.BRAND_RED_LIGHT,
-                hover_color=theme.BRAND_RED_LIGHT,
-                border_color=theme.BRAND_RED,
-                text_color=theme.BRAND_RED,
-            )
-        else:
-            button.configure(
-                text=base_text,
-                fg_color=theme.WHITE,
-                hover_color=theme.APP_BACKGROUND,
-                border_color=theme.BORDER,
-                text_color=theme.TEXT_MAIN,
-            )
 
-    def _update_due_text(self):
-        if not hasattr(self, "due_label"):
-            return
-        if self.selected_hours is None:
-            self.due_label.configure(text="貸出時間を選んでください")
-            return
-        due_at = self.app.service.calculate_due_at(self.selected_hours)
-        self.due_label.configure(text=format_for_display(due_at))
-
-    def _update_due_text_regularly(self):
-        """画面を開いたまま時間が過ぎても、返却予定が古くならないようにする"""
-        self._update_due_text()
-        self.schedule(15_000, self._update_due_text_regularly)
-
-    def _go_to_confirm(self):
-        selected_camera = None
-        for camera in self.cameras:
-            if camera.id == self.selected_camera_id:
-                selected_camera = camera
-        if selected_camera is None or self.selected_hours is None:
-            return
-
-        self.app.show_screen(
-            BorrowConfirmScreen,
-            user=self.user,
-            camera=selected_camera,
-            rental_hours=self.selected_hours,
-        )
+def go_to_camera_select(app, user):
+    """カメラ選択へ戻る(戻る間にほかの人が借りた場合に備えて、一覧を取り直す)"""
+    try:
+        cameras = app.service.get_borrowable_cameras(user)
+    except Exception as error:
+        app.show_error(error)
+        return
+    app.show_screen(CameraSelectScreen, user=user, cameras=cameras)
 
 
 # ======================================================
@@ -583,65 +459,38 @@ class BorrowConfirmScreen(BaseScreen):
         self.camera = camera
         self.rental_hours = rental_hours
 
-        self.set_title("貸出内容を確認してください", step_text=borrow_step_text(3, "内容の確認"))
+        self.show_steps(BORROW_STEP_NAMES, 3)
+        self.set_title("この内容で貸し出します", note="「貸し出す」を押すと記録され、扉のロックが開きます。")
 
         due_at = self.app.service.calculate_due_at(rental_hours)
         info_table = InfoTable(
             self.content_area,
             [
                 ("利用者", f"{user.name} さん"),
-                ("社員番号", user.employee_number),
                 ("カメラ", camera.name),
                 ("貸出時間", f"{rental_hours}時間"),
-                ("返却予定日時", format_for_display(due_at)),
+                ("返却予定", format_for_display(due_at)),
             ],
         )
-        info_table.pack(anchor="w")
+        info_table.pack(fill="x")
 
-        notice_label = label(
-            self.content_area,
-            "「貸出を確定する」を押すと記録され、保管庫の扉のロックが開きます。\n"
-            "※ 返却予定日時は、確定した時刻から計算します。",
-            color=theme.TEXT_SUB,
-        )
-        notice_label.pack(anchor="w", pady=(20, 0))
-
-        self.back_button = secondary_button(self.bottom_area, "戻る", self._go_back)
-        self.back_button.pack(side="left")
-
-        self.confirm_button = primary_button(self.bottom_area, "貸出を確定する", self._confirm, width=260)
-        self.confirm_button.pack(side="right")
+        self.back_button = self.add_back_button("戻る", self._go_back)
+        self.confirm_button = self.add_next_button("貸し出す", self._confirm)
 
     def _go_back(self):
-        try:
-            cameras = self.app.service.get_borrowable_cameras(self.user)
-        except Exception as error:
-            self.app.show_error(error)
-            return
-
-        self.app.show_screen(
-            CameraSelectScreen,
-            user=self.user,
-            cameras=cameras,
-            selected_camera_id=self.camera.id,
-            selected_hours=self.rental_hours,
-        )
+        self.app.show_screen(HoursSelectScreen, user=self.user, camera=self.camera)
 
     def _confirm(self):
         # 二度押しで2回処理されないよう、最初にボタンを無効にする
         set_button_enabled(self.confirm_button, False)
         self.back_button.configure(state="disabled")
-        self.confirm_button.configure(text="記録しています…")
+        self.confirm_button.configure(text="記録しています")
         self.update_idletasks()
 
         try:
             result = self.app.service.borrow_camera(self.user, self.camera.id, self.rental_hours)
-        except errors.CameraNotAvailableError as error:
-            # 確認中にほかの人が借りた場合など
-            self.app.show_error(error)
-            return
         except Exception as error:
-            # DB記録に失敗 → 解錠はされていない
+            # DB記録に失敗 or 確認中にほかの人が借りた → 解錠はされていない
             self.app.show_error(error)
             return
 
@@ -660,49 +509,36 @@ class ReturnConfirmScreen(BaseScreen):
         self.user = user
         self.rental = rental
 
-        self.set_title(
-            "このカメラを返却しますか?",
-            step_text=return_step_text(2, "返却対象の確認"),
-            subtitle=f"{user.name} さん(社員番号 {user.employee_number})",
-        )
-
-        now = self.app.service.now()
-        if rental.is_overdue(now):
-            overdue_panel = MessagePanel(
-                self.content_area,
-                kind="warning",
-                title="返却予定日時を過ぎています",
-                message="このまま返却できます。延滞の扱いは管理者の指示に従ってください。",
-            )
-            overdue_panel.pack(fill="x", pady=(0, 16))
+        self.show_steps(RETURN_STEP_NAMES, 1)
+        self.set_title("このカメラを返却します", note="「返却する」を押すと記録され、扉のロックが開きます。")
 
         info_table = InfoTable(
             self.content_area,
             [
+                ("利用者", f"{user.name} さん"),
                 ("カメラ", rental.camera_name),
                 ("貸出日時", format_for_display(rental.rented_at)),
-                ("返却予定日時", format_for_display(rental.due_at)),
+                ("返却予定", format_for_display(rental.due_at)),
             ],
         )
-        info_table.pack(anchor="w")
+        info_table.pack(fill="x")
 
-        notice_label = label(
-            self.content_area,
-            "「返却する」を押すと記録され、保管庫の扉のロックが開きます。",
-            color=theme.TEXT_SUB,
-        )
-        notice_label.pack(anchor="w", pady=(20, 0))
+        if rental.is_overdue(self.app.service.now()):
+            overdue_label = label(
+                self.content_area,
+                "返却予定を過ぎています。このまま返却できます。",
+                bold=True,
+                color=theme.WARNING_TEXT,
+            )
+            overdue_label.pack(anchor="w", pady=(16, 0))
 
-        self.cancel_button = secondary_button(self.bottom_area, "やめる", self.app.go_home)
-        self.cancel_button.pack(side="left")
-
-        self.confirm_button = primary_button(self.bottom_area, "返却する", self._confirm, width=260)
-        self.confirm_button.pack(side="right")
+        self.cancel_button = self.add_back_button("やめる", self.app.go_home)
+        self.confirm_button = self.add_next_button("返却する", self._confirm)
 
     def _confirm(self):
         set_button_enabled(self.confirm_button, False)
         self.cancel_button.configure(state="disabled")
-        self.confirm_button.configure(text="記録しています…")
+        self.confirm_button.configure(text="記録しています")
         self.update_idletasks()
 
         try:
@@ -717,123 +553,56 @@ class ReturnConfirmScreen(BaseScreen):
 def show_unlock_result(app, result):
     """解錠に成功したか失敗したかで、次の画面を切り替える"""
     if result.unlocked:
-        app.show_screen(UnlockedScreen, result=result)
+        app.show_screen(DoneScreen, result=result)
     else:
         app.show_screen(UnlockFailedScreen, result=result)
 
 
 # ======================================================
-# 解錠中
+# 完了(扉が開いている間)
 # ======================================================
 
-class UnlockedScreen(BaseScreen):
-    """解錠した後の案内画面(カメラの取り出し / 返却)"""
+class DoneScreen(BaseScreen):
+    """
+    完了画面
 
-    # 扉が開いている間は、ホームに戻さない
+    手続きはもう終わっているので、ここでは「次に利用者がすること」だけを大きく出します。
+    扉が施錠に戻るまでの秒数を表示し、時間が来たらホームへ戻ります。
+    """
+
+    # 扉が開いている間は、無操作タイムアウトではなくこの画面の秒読みを使う
     idle_timeout_enabled = False
 
     def __init__(self, parent, app, result):
         super().__init__(parent, app)
-        self.result = result
         self.remaining_seconds = self.app.settings.UNLOCK_SECONDS
-
-        camera_name = result.rental.camera_name
-        if result.purpose == PURPOSE_BORROW:
-            step_text = borrow_step_text(4, "カメラの取り出し")
-            instruction = f"扉を開けて「{camera_name}」を取り出し、扉を閉めてください。"
-        else:
-            step_text = return_step_text(3, "カメラの返却")
-            instruction = f"扉を開けて「{camera_name}」を元の場所に戻し、扉を閉めてください。"
-
-        self.set_title("扉のロックを開けました", step_text=step_text)
-
-        green_panel = customtkinter.CTkFrame(
-            self.content_area,
-            fg_color=theme.SUCCESS_BACKGROUND,
-            corner_radius=theme.CORNER_RADIUS,
-        )
-        green_panel.pack(fill="both", expand=True)
-
-        inner_frame = customtkinter.CTkFrame(green_panel, fg_color="transparent")
-        inner_frame.place(relx=0.5, rely=0.5, anchor="center")
-
-        instruction_label = label(
-            inner_frame,
-            instruction,
-            size=theme.FONT_SIZE_HEADING,
-            bold=True,
-            color=theme.SUCCESS_TEXT,
-            wraplength=760,
-            anchor="center",
-            justify="center",
-        )
-        instruction_label.pack()
-
-        self.countdown_label = label(inner_frame, "", size=theme.FONT_SIZE_TITLE, bold=True,
-                                     color=theme.SUCCESS_TEXT, anchor="center")
-        self.countdown_label.pack(pady=(16, 0))
-
-        done_button = primary_button(self.bottom_area, "完了", self._finish)
-        done_button.pack(side="right")
-
-        self._count_down()
-
-    def _count_down(self):
-        if self.remaining_seconds <= 0:
-            self._finish()
-            return
-        self.countdown_label.configure(text=f"あと {self.remaining_seconds} 秒で自動的に施錠されます")
-        self.remaining_seconds -= 1
-        self.schedule(1000, self._count_down)
-
-    def _finish(self):
-        self.app.show_screen(CompleteScreen, result=self.result)
-
-
-# ======================================================
-# 完了
-# ======================================================
-
-class CompleteScreen(BaseScreen):
-    """完了画面(しばらくすると自動でホームへ戻る)"""
-
-    def __init__(self, parent, app, result):
-        super().__init__(parent, app)
-        self.remaining_seconds = self.app.settings.COMPLETE_SCREEN_SECONDS
         rental = result.rental
 
-        green_panel = customtkinter.CTkFrame(
-            self.content_area,
-            fg_color=theme.SUCCESS_BACKGROUND,
-            corner_radius=theme.CORNER_RADIUS,
-        )
-        green_panel.pack(fill="both", expand=True)
-
-        inner_frame = customtkinter.CTkFrame(green_panel, fg_color="transparent")
-        inner_frame.place(relx=0.5, rely=0.5, anchor="center")
-
-        check_mark = circle_icon(inner_frame, "✓", theme.SUCCESS_STRONG, diameter=110, font_size=60)
-        check_mark.pack(pady=(0, 16))
+        step_names = step_names_for(result.purpose)
+        self.show_steps(step_names, len(step_names) - 1)
 
         if result.purpose == PURPOSE_BORROW:
-            title_text = "貸出が完了しました"
-            detail_text = f"{rental.camera_name}\n返却予定: {format_for_display(rental.due_at)}"
+            tag_text = "貸出完了"
+            instruction = "扉が開きました。\nカメラを取り出して、扉を閉めてください。"
+            detail = f"{rental.camera_name}   返却予定  {format_for_display(rental.due_at)}"
         else:
-            title_text = "返却が完了しました"
-            detail_text = f"{rental.camera_name}\nご利用ありがとうございました"
+            tag_text = "返却完了"
+            instruction = "扉が開きました。\nカメラを元の場所に置いて、扉を閉めてください。"
+            detail = rental.camera_name
 
-        title_label = label(inner_frame, title_text, size=theme.FONT_SIZE_TITLE, bold=True,
-                            color=theme.SUCCESS_TEXT, anchor="center")
-        title_label.pack()
+        tag = status_tag(self.title_area, tag_text, "success", width=120)
+        tag.pack(anchor="w", pady=(0, 16))
 
-        detail_label = label(inner_frame, detail_text, anchor="center", justify="center")
-        detail_label.pack(pady=(8, 0))
+        instruction_label = label(self.title_area, instruction, size=theme.FONT_SIZE_LARGE + 4, bold=True)
+        instruction_label.pack(anchor="w")
 
-        self.countdown_label = label(self.bottom_area, "", color=theme.TEXT_SUB)
-        self.countdown_label.pack(side="left")
+        detail_label = label(self.content_area, detail, color=theme.TEXT_SUB)
+        detail_label.pack(anchor="w")
 
-        home_button = primary_button(self.bottom_area, "ホームへ", self.app.go_home)
-        home_button.pack(side="right")
+        self.countdown_label = label(self.content_area, "", color=theme.TEXT_SUB)
+        self.countdown_label.pack(anchor="w", pady=(6, 0))
+
+        self.add_next_button("ホームに戻る", self.app.go_home)
 
         self._count_down()
 
@@ -841,7 +610,9 @@ class CompleteScreen(BaseScreen):
         if self.remaining_seconds <= 0:
             self.app.go_home()
             return
-        self.countdown_label.configure(text=f"{self.remaining_seconds} 秒後にホームに戻ります")
+        self.countdown_label.configure(
+            text=f"{self.remaining_seconds} 秒後に扉のロックがかかり、ホームに戻ります。"
+        )
         self.remaining_seconds -= 1
         self.schedule(1000, self._count_down)
 
@@ -854,11 +625,7 @@ class UnlockFailedScreen(BaseScreen):
     """
     DB には記録できたが、解錠に失敗したときの画面
 
-    利用者と管理者が状況を判断できるよう、
-        ・何が記録されたか
-        ・受付番号(貸出ID)
-        ・次に選べる操作
-    を表示します。
+    受付番号(貸出ID)を表示して、利用者と管理者が同じ番号で話せるようにします。
     """
 
     def __init__(self, parent, app, result, attempt_number=1):
@@ -867,49 +634,32 @@ class UnlockFailedScreen(BaseScreen):
         self.rental = result.rental
         self.attempt_number = attempt_number
 
-        if result.purpose == PURPOSE_BORROW:
-            self.set_title("貸出は記録されましたが、扉が開きませんでした")
-            message = (
-                "「もう一度解錠する」を押してください。\n"
-                "それでも開かない場合は「貸出を取り消す」を押してください。"
-            )
-        else:
-            self.set_title("返却は記録されましたが、扉が開きませんでした")
-            message = (
-                "「もう一度解錠する」を押してください。\n"
-                "それでも開かない場合は、カメラを手元で保管し、管理者に連絡してください。\n"
-                "(このカメラは、他の人に貸し出されないよう「点検中」にしました)"
-            )
+        step_names = step_names_for(result.purpose)
+        self.show_steps(step_names, len(step_names) - 1)
 
-        warning_panel = MessagePanel(self.content_area, kind="warning", title="扉のロックを解錠できません",
-                                     message=message)
-        warning_panel.pack(fill="x")
+        if result.purpose == PURPOSE_BORROW:
+            note = "貸出は記録されています。もう一度開けるか、貸出を取り消してください。"
+        else:
+            note = "返却は記録されています。このカメラは点検中にしました。"
+
+        self.set_title("扉が開きませんでした", note=note, title_color=theme.ERROR_TEXT)
 
         info_table = InfoTable(
             self.content_area,
             [
                 ("受付番号", f"{self.rental.id}"),
                 ("カメラ", self.rental.camera_name),
-                ("解錠の試行", f"{attempt_number} 回目"),
+                ("開けた回数", f"{attempt_number} 回"),
             ],
         )
-        info_table.pack(anchor="w", pady=(16, 0))
-
-        admin_note = label(
-            self.content_area,
-            "管理者に連絡する場合は、受付番号を伝えてください。",
-            color=theme.TEXT_SUB,
-        )
-        admin_note.pack(anchor="w", pady=(8, 0))
+        info_table.pack(fill="x")
 
         if result.purpose == PURPOSE_BORROW:
-            cancel_button = secondary_button(self.bottom_area, "貸出を取り消す", self._cancel_borrow, width=240)
+            self.add_back_button("貸出を取り消す", self._cancel_borrow)
         else:
-            cancel_button = secondary_button(self.bottom_area, "管理者に連絡する", self._contact_admin, width=240)
-        cancel_button.pack(side="left")
+            self.add_back_button("管理者に連絡する", self._contact_admin)
 
-        self.retry_button = primary_button(self.bottom_area, "もう一度解錠する", self._retry_unlock, width=260)
-        self.retry_button.pack(side="right")
+        self.retry_button = self.add_next_button("もう一度開ける", self._retry_unlock)
 
     def _retry_unlock(self):
         set_button_enabled(self.retry_button, False)
@@ -922,7 +672,7 @@ class UnlockFailedScreen(BaseScreen):
             return
 
         if new_result.unlocked:
-            self.app.show_screen(UnlockedScreen, result=new_result)
+            self.app.show_screen(DoneScreen, result=new_result)
         else:
             self.app.show_screen(
                 UnlockFailedScreen,
@@ -941,10 +691,7 @@ class UnlockFailedScreen(BaseScreen):
             MessageScreen,
             level="info",
             title="貸出を取り消しました",
-            message=(
-                f"受付番号 {self.rental.id} の貸出は取り消されました。\n"
-                "扉が開かない状態が続く場合は、管理者に連絡してください。"
-            ),
+            message=f"受付番号 {self.rental.id}。扉が開かない場合は管理者に連絡してください。",
         )
 
     def _contact_admin(self):
@@ -952,11 +699,7 @@ class UnlockFailedScreen(BaseScreen):
             MessageScreen,
             level="warning",
             title="管理者に連絡してください",
-            message=(
-                f"受付番号 {self.rental.id}:返却は記録済みです。\n"
-                f"「{self.rental.camera_name}」は点検中に設定しました。\n"
-                "カメラは手元で保管し、管理者の指示に従ってください。"
-            ),
+            message=f"受付番号 {self.rental.id}。カメラは手元で保管してください。",
         )
 
     def on_idle_timeout(self):
@@ -980,49 +723,31 @@ class UnlockFailedScreen(BaseScreen):
 # ======================================================
 
 class MessageScreen(BaseScreen):
-    """エラー・注意・お知らせを表示する汎用画面"""
+    """
+    エラー・注意・お知らせを表示する汎用画面
 
-    # レベル → (アイコンの文字, アイコンの色, 見出しの色)
+    「何が起きたか」を見出しに、「次に何をするか」を1行で書きます。
+    """
+
+    # レベル → (札の文字, 札の種類, 見出しの色)
     LEVEL_STYLES = {
-        "error": ("!", theme.BRAND_RED, theme.ERROR_TEXT),
-        "warning": ("!", "#E0A100", theme.WARNING_TEXT),
-        "info": ("i", theme.INFO_TEXT, theme.INFO_TEXT),
-        "success": ("✓", theme.SUCCESS_STRONG, theme.SUCCESS_TEXT),
-    }
-
-    # 画面上部に表示する、レベルの文字(色が分からなくても伝わるように)
-    LEVEL_NAMES = {
-        "error": "エラー",
-        "warning": "注意",
-        "info": "お知らせ",
-        "success": "完了",
+        "error": ("エラー", "error", theme.ERROR_TEXT),
+        "warning": ("注意", "warning", theme.TEXT_MAIN),
+        "info": ("お知らせ", "info", theme.TEXT_MAIN),
+        "success": ("完了", "success", theme.TEXT_MAIN),
     }
 
     def __init__(self, parent, app, level, title, message, retry_action=None, retry_label="もう一度試す"):
         super().__init__(parent, app)
 
-        icon_text, icon_color, title_color = self.LEVEL_STYLES[level]
+        tag_text, tag_kind, title_color = self.LEVEL_STYLES[level]
 
-        inner_frame = customtkinter.CTkFrame(self.content_area, fg_color="transparent")
-        inner_frame.place(relx=0.5, rely=0.45, anchor="center")
+        tag = status_tag(self.title_area, tag_text, tag_kind)
+        tag.pack(anchor="w", pady=(0, 16))
 
-        icon_label = circle_icon(inner_frame, icon_text, icon_color, diameter=96, font_size=52)
-        icon_label.pack(pady=(0, 12))
+        self.set_title(title, note=message, title_color=title_color)
 
-        level_label = label(inner_frame, self.LEVEL_NAMES[level], size=theme.FONT_SIZE_SMALL,
-                            bold=True, color=title_color, anchor="center")
-        level_label.pack()
-
-        title_label = label(inner_frame, title, size=theme.FONT_SIZE_TITLE, bold=True,
-                            color=title_color, anchor="center", justify="center", wraplength=780)
-        title_label.pack(pady=(4, 12))
-
-        message_label = label(inner_frame, message, anchor="center", justify="center", wraplength=780)
-        message_label.pack()
-
-        home_button = secondary_button(self.bottom_area, "ホームに戻る", self.app.go_home)
-        home_button.pack(side="left")
+        self.add_back_button("ホームに戻る", self.app.go_home)
 
         if retry_action is not None:
-            retry_button = primary_button(self.bottom_area, retry_label, retry_action, width=260)
-            retry_button.pack(side="right")
+            self.add_next_button(retry_label, retry_action)

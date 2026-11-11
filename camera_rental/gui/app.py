@@ -60,7 +60,7 @@ class CameraRentalApp(customtkinter.CTk):
         self.title(self.settings.SYSTEM_NAME)
         self.geometry(f"{self.settings.WINDOW_WIDTH}x{self.settings.WINDOW_HEIGHT}")
         self.minsize(self.settings.WINDOW_MIN_WIDTH, self.settings.WINDOW_MIN_HEIGHT)
-        self.configure(fg_color=theme.APP_BACKGROUND)
+        self.configure(fg_color=theme.PAGE_BACKGROUND)
 
         if self.settings.FULLSCREEN:
             self.attributes("-fullscreen", True)
@@ -72,7 +72,12 @@ class CameraRentalApp(customtkinter.CTk):
         self.attributes("-fullscreen", False)
 
     def _build_header(self):
-        """上部の赤いヘッダー"""
+        """
+        上部の赤いヘッダー
+
+        システム名と時計だけを置く細い帯です。
+        画面ごとの情報(手順・見出し)はヘッダーではなく各画面に表示します。
+        """
         header = customtkinter.CTkFrame(
             self,
             height=theme.HEADER_HEIGHT,
@@ -92,22 +97,24 @@ class CameraRentalApp(customtkinter.CTk):
             bold=True,
             color=theme.WHITE,
         )
-        system_name_label.pack(side="left", padx=(theme.PAGE_PADDING, 0))
+        system_name_label.pack(side="left", padx=(theme.PAGE_PADDING_X, 0))
 
-        self.clock_label = label(header, "", size=theme.FONT_SIZE_BODY, color=theme.WHITE)
-        self.clock_label.pack(side="right", padx=theme.PAGE_PADDING)
+        self.clock_label = label(header, "", size=theme.FONT_SIZE_HEADER, color=theme.WHITE)
+        self.clock_label.pack(side="right", padx=theme.PAGE_PADDING_X)
 
         if self.demo_mode:
+            # デモ中であることは、誤って本番と思わないよう常に表示する
             demo_badge = customtkinter.CTkLabel(
                 header,
-                text="  デモモード(実機は動きません)  ",
+                text="デモモード",
+                width=110,
+                height=30,
+                corner_radius=4,
                 font=theme.font(theme.FONT_SIZE_SMALL, bold=True),
                 fg_color=theme.DEMO_BADGE_BACKGROUND,
-                text_color=theme.DEMO_BADGE_TEXT,
-                corner_radius=10,
-                height=34,
+                text_color=theme.TEXT_MAIN,
             )
-            demo_badge.pack(side="right", padx=(0, 8))
+            demo_badge.pack(side="right", padx=(0, 16))
 
     def _add_logo_if_configured(self, header):
         """
@@ -125,7 +132,7 @@ class CameraRentalApp(customtkinter.CTk):
 
             logo_image = Image.open(logo_path)
             # ヘッダーの高さに合わせて縮小する(縦横比は保つ)
-            target_height = 40
+            target_height = 32
             target_width = int(logo_image.width * target_height / logo_image.height)
             self.logo_image = customtkinter.CTkImage(
                 light_image=logo_image,
@@ -136,16 +143,16 @@ class CameraRentalApp(customtkinter.CTk):
             return
 
         logo_label = customtkinter.CTkLabel(header, text="", image=self.logo_image)
-        logo_label.pack(side="left", padx=(theme.PAGE_PADDING, 0))
+        logo_label.pack(side="left", padx=(theme.PAGE_PADDING_X, 0))
 
     def _build_body(self):
         """ヘッダーの下の、画面を表示する場所"""
-        self.body = customtkinter.CTkFrame(self, fg_color=theme.APP_BACKGROUND, corner_radius=0)
+        self.body = customtkinter.CTkFrame(self, fg_color=theme.PAGE_BACKGROUND, corner_radius=0)
         self.body.pack(fill="both", expand=True)
 
     def _update_clock(self):
         """ヘッダーの時計を更新する(1秒ごと)"""
-        now_text = datetime.now().strftime("%Y/%m/%d %H:%M")
+        now_text = datetime.now().strftime("%m月%d日 %H:%M")
         self.clock_label.configure(text=now_text)
         self.after(1000, self._update_clock)
 
@@ -165,7 +172,7 @@ class CameraRentalApp(customtkinter.CTk):
             self.current_screen.destroy()
 
         self.current_screen = screen_class(self.body, app=self, **screen_arguments)
-        self.current_screen.pack(fill="both", expand=True, padx=theme.PAGE_PADDING, pady=theme.PAGE_PADDING)
+        self.current_screen.pack(fill="both", expand=True)
 
         self.last_interaction_time = time.monotonic()
 
@@ -176,7 +183,7 @@ class CameraRentalApp(customtkinter.CTk):
     # エラー表示
     # ==================================================
 
-    def show_error(self, error, retry_action=None):
+    def show_error(self, error, retry_action=None, retry_label="もう一度試す"):
         """
         例外を、利用者向けのエラー画面で表示する
 
@@ -192,11 +199,8 @@ class CameraRentalApp(customtkinter.CTk):
             level = "warning" if self._is_warning(error) else "error"
         else:
             logger.error("想定外のエラーが発生しました", exc_info=error)
-            title = "予期しないエラーが発生しました"
-            message = (
-                "処理を中止しました。ロックは解錠していません。\n"
-                "もう一度お試しください。繰り返す場合は管理者に連絡してください。"
-            )
+            title = "処理を中止しました"
+            message = "扉は開けていません。もう一度お試しください。"
             level = "error"
 
         self.show_screen(
@@ -205,6 +209,7 @@ class CameraRentalApp(customtkinter.CTk):
             title=title,
             message=message,
             retry_action=retry_action,
+            retry_label=retry_label,
         )
 
     @staticmethod

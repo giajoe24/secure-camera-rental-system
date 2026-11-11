@@ -127,7 +127,7 @@ COMPLETE_SCREEN_SECONDS = 6
 # 履歴画面に表示する件数(CSV出力は全件)
 HISTORY_DISPLAY_LIMIT = 50
 
-# 履歴画面に「CSVに出力する」ボタンを表示するか
+# 履歴画面に「CSVに保存する」ボタンを表示するか
 # 一般利用者に出力させたくない場合は False にしてください。
 # (False でも manage_data.py export-history で出力できます)
 ALLOW_CSV_EXPORT_FROM_SCREEN = True

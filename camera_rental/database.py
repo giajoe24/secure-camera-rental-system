@@ -787,7 +787,7 @@ class Database:
         return self._run_read(read)
 
     def list_camera_statuses(self):
-        """カメラごとの状態と、貸出中なら貸出記録を返す(貸出状況画面用)"""
+        """カメラごとの状態と、貸出中なら貸出記録を返す(ホーム画面の一覧用)"""
 
         def read(connection):
             camera_rows = connection.execute(

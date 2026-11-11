@@ -4,6 +4,13 @@
 デザインを変えたいときは、まずこのファイルの値を変更してください。
 画面ごとのファイルに色コードを直接書かないようにしているので、
 ここを変えればアプリ全体の見た目がそろって変わります。
+
+【デザインの方針】
+    駅の券売機や受付端末のように「迷わない」ことを優先しています。
+    ・装飾(影・グラデーション・アイコン・入れ子のカード)は使わない
+    ・角丸は小さめ(6px)。丸すぎると業務端末らしさがなくなるため
+    ・色は意味のあるところだけに使う(赤=主な操作、緑/青/黄=状態)
+    ・文字は左寄せ。視線が左上から右下へ素直に流れるようにする
 """
 
 import sys
@@ -19,72 +26,69 @@ import customtkinter
 # ブランドカラー(DENSOレッド)
 BRAND_RED = "#DC0032"
 BRAND_RED_HOVER = "#B8002A"
-BRAND_RED_LIGHT = "#FDECEF"      # 社員証読み取り部分などの薄い赤背景
-BRAND_RED_BORDER = "#F5B5C3"
 
 # 全体
-APP_BACKGROUND = "#F3F4F6"
-CARD_BACKGROUND = "#FFFFFF"
+PAGE_BACKGROUND = "#FFFFFF"      # 画面の地(白一色にして、カードの入れ子をなくす)
+FOOTER_BACKGROUND = "#F3F4F6"    # 下部のボタン帯
 TEXT_MAIN = "#202124"
 TEXT_SUB = "#6B7280"
 BORDER = "#E5E7EB"
 WHITE = "#FFFFFF"
 
 # 補助ボタン(戻る・やめる など)
-SECONDARY_BUTTON = "#E5E7EB"
-SECONDARY_BUTTON_HOVER = "#D1D5DB"
-DISABLED_BUTTON = "#F3B3C1"
+SECONDARY_BUTTON = "#FFFFFF"
+SECONDARY_BUTTON_HOVER = "#E5E7EB"
+SECONDARY_BUTTON_BORDER = "#C9CDD3"
+DISABLED_BUTTON = "#E5E7EB"
+DISABLED_TEXT = "#9CA3AF"
 
-# 成功(緑)
+# 選択肢のボタン(カメラ・貸出時間)
+CHOICE_BUTTON_HOVER = "#F9FAFB"
+
+# 状態の色(文字色, 背景色)
 SUCCESS_TEXT = "#137A4B"
 SUCCESS_BACKGROUND = "#EAF8F0"
-SUCCESS_STRONG = "#1E9E63"
-
-# 警告(黄)
+INFO_TEXT = "#1D4ED8"            # 「貸出中」は異常ではないので青
+INFO_BACKGROUND = "#EAF1FF"
 WARNING_TEXT = "#8A5A00"
 WARNING_BACKGROUND = "#FFF6DB"
-WARNING_BORDER = "#F4D27A"
-
-# エラー(赤)
 ERROR_TEXT = "#B3002A"
 ERROR_BACKGROUND = "#FDECEF"
 
-# 情報(青)… 「貸出中」の表示に使う(貸出中は異常ではないため、赤や黄にしない)
-INFO_TEXT = "#1D4ED8"
-INFO_BACKGROUND = "#EAF1FF"
-
 # デモモード表示
 DEMO_BADGE_BACKGROUND = "#FFD54F"
-DEMO_BADGE_TEXT = "#202124"
 
 
 # --------------------------------------------------
 # 大きさ
 # --------------------------------------------------
 
-HEADER_HEIGHT = 72
-CORNER_RADIUS = 14
-CARD_CORNER_RADIUS = 18
-PAGE_PADDING = 24
-CARD_PADDING = 28
+HEADER_HEIGHT = 52
+STEP_BAR_HEIGHT = 56
+FOOTER_HEIGHT = 92
+CORNER_RADIUS = 6
+PAGE_PADDING_X = 40
+PAGE_PADDING_Y = 22
 
-# タッチ操作しやすいよう、ボタンは高さ 60 以上にしています
-BUTTON_HEIGHT = 64
-BUTTON_WIDTH = 220
-TILE_HEIGHT = 170
+# 下部のボタン(戻る・次へ)は、どの画面でも同じ大きさ・同じ位置
+FOOTER_BUTTON_WIDTH = 260
+FOOTER_BUTTON_HEIGHT = 68
+
+# 選択肢のボタン
+CHOICE_BUTTON_HEIGHT = 60
 
 
 # --------------------------------------------------
 # 文字
 # --------------------------------------------------
 
-FONT_SIZE_HEADER = 22
-FONT_SIZE_TITLE = 28
-FONT_SIZE_HEADING = 22
-FONT_SIZE_BODY = 18
-FONT_SIZE_SMALL = 15
-FONT_SIZE_BUTTON = 20
-FONT_SIZE_TILE = 30
+FONT_SIZE_HEADER = 18      # ヘッダーのシステム名
+FONT_SIZE_STEP = 17        # 手順表示
+FONT_SIZE_TITLE = 26       # 画面の見出し(1画面に1つ)
+FONT_SIZE_LARGE = 30       # 完了画面の「次にすること」
+FONT_SIZE_BODY = 19
+FONT_SIZE_SMALL = 16
+FONT_SIZE_BUTTON = 21
 
 # 日本語フォントの候補(上から順に、見つかったものを使う)
 #   Windows      : Yu Gothic UI / Meiryo UI

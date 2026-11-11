@@ -134,9 +134,8 @@ class RentalService:
         if active_rental is not None:
             raise errors.UserHasActiveRentalError(
                 user_message=(
-                    f"「{active_rental.camera_name}」がまだ返却されていません。\n"
-                    f"(返却予定: {format_for_display(active_rental.due_at)})\n"
-                    "先にカメラを返却してから、もう一度貸出してください。"
+                    f"先に「{active_rental.camera_name}」"
+                    f"(返却予定 {format_for_display(active_rental.due_at)})を返却してください。"
                 ),
             )
 
@@ -240,7 +239,7 @@ class RentalService:
     # ==================================================
 
     def retry_unlock(self, rental, purpose):
-        """解錠失敗画面の「もう一度解錠する」から呼ばれる"""
+        """解錠失敗画面の「もう一度開ける」から呼ばれる"""
         self.ensure_lock_is_ready()
         return self._unlock_after_record(rental, purpose, is_retry=True)
 

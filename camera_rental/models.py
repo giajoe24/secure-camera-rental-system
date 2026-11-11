@@ -163,7 +163,7 @@ class Rental:
 
 @dataclass
 class CameraStatusRow:
-    """貸出状況画面の1行分(カメラ + 貸出中なら借りている人)"""
+    """ホーム画面の一覧の1行分(カメラ + 貸出中なら借りている人)"""
 
     camera: Camera
     rental: Rental | None
