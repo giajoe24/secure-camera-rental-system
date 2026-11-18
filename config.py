@@ -1,0 +1,58 @@
+# 設定
+
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = BASE_DIR / "data" / "camera_rental.sqlite3"
+LOG_PATH = BASE_DIR / "logs" / "camera_rental.log"
+EXPORT_DIR = BASE_DIR / "exports"   # Excel の保存先
+
+CAMERA_NAME = "セキュアカメラ"
+
+# 貸出時間の選択肢(分)
+RENTAL_MINUTES = [15, 30, 60, 120, 240, 480]
+
+# 電磁ロック
+LOCK_GPIO_PIN = 18        # BCM 番号
+LOCK_ACTIVE_HIGH = True   # Low で動くリレーなら False
+
+# 解錠パルス(実機では 2ms で外れたので 5ms にしている)
+UNLOCK_PULSE_COUNT = 1
+UNLOCK_PULSE_ON_SECONDS = 0.005
+UNLOCK_PULSE_OFF_SECONDS = 0.2    # 2回以上出すときの間隔
+
+# LE-53 のマイクロスイッチ(COM → GND、NO → この GPIO、外付け 10kΩ でプルアップ)
+LOCK_SWITCH_GPIO_PIN = 23
+
+# カードリーダー
+CARD_READER_PATH = "usb"
+CARD_TARGETS = ["212F", "106A", "106B"]  # FeliCa / Type A / Type B
+
+# 待ち時間(秒)。MTG では 10〜30 秒で、実機で確かめてから決めることになった
+CARD_WAIT_SECONDS = 30        # 社員証をかざすのを待つ
+IDLE_SECONDS = 30             # 操作がないとホームに戻る
+DOOR_OPEN_WAIT_SECONDS = 30   # 解錠してから扉が開かれるのを待つ(過ぎたら取り消し)
+DOOR_CLOSE_WARN_SECONDS = 60  # 扉が開いたままこれだけたったら警告を出す
+DONE_SCREEN_SECONDS = 5       # 完了画面を出しておく
+
+# 画面(7インチ 800×480 のタッチモニター)
+FULLSCREEN = True         # PC で試すときは False(Esc でも解除できる)
+
+# ログファイル(容量がいっぱいにならないよう、1MB ごとに分けて 5 つまで残す)
+LOG_FILE_BYTES = 1_000_000
+LOG_FILE_COUNT = 5
+
+# ---- 追加機能 ----
+# 使うものだけ True にする
+
+USE_OVERDUE_DISPLAY = True   # 期限切れをホームに控えめに出す(overdue_display.py)
+USE_OVERDUE_RECORD = True    # 何分遅れて返したかを出す(overdue_record.py)
+
+USE_EXTEND = True            # 返却予定の延長(extend.py)
+EXTEND_MINUTES = [15, 30, 60, 120]
+
+USE_BACKUP = True            # DB を1日1回バックアップ(backup.py)
+BACKUP_DIR = BASE_DIR / "backups"
+BACKUP_KEEP_DAYS = 31        # 記録は最低1か月残す決まりなので、それより長く
+
+# 管理画面の「利用者の一覧」「貸出の履歴」、管理者の追加・削除、CSV 保存は admin_screen.py にある

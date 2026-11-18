@@ -1,0 +1,2 @@
+customtkinter>=5.2.2
+openpyxl>=3.1      # export.py で Excel を作るときに使う

@@ -1,0 +1,3 @@
+-r requirements.txt
+gpiozero>=2.0
+nfcpy==1.0.4
