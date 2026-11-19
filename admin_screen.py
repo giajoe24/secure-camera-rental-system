@@ -139,13 +139,20 @@ class RegisterScreen(Screen):
 
         if first_admin:
             self.show_steps(FIRST_ADMIN_STEPS, 1)
-            self.show_title("最初の管理者を登録します", f"社員番号と氏名を入れてください。(カードID {card_id})")
+            title = "最初の管理者を登録します"
+            self.note = f"社員番号と氏名を入れてください。(カードID {card_id})"
             self.add_left_button("戻る", app.go_home)
         else:
             self.show_steps(REGISTER_STEPS, 1)
-            self.show_title("社員番号と氏名を入れてください", f"カードID {card_id}")
+            title = "社員番号と氏名を入れてください"
+            self.note = f"カードID {card_id}"
             self.add_left_button("戻る", lambda: app.show(AdminMenuScreen))
         self.add_right_button("登録する", self.register)
+
+        # 見出しの下の文は、入力にまちがいがあったらエラーの文に変える(画面の高さを変えないため)
+        make_label(self.top_area, title, 24, True).pack(anchor="w")
+        self.note_label = make_label(self.top_area, self.note, color=SUB_TEXT_COLOR)
+        self.note_label.pack(anchor="w", pady=(4, 0))
 
         form = customtkinter.CTkFrame(self.content_area, fg_color="transparent")
         form.pack(fill="x")
@@ -167,8 +174,6 @@ class RegisterScreen(Screen):
         if not first_admin:
             self.admin_checkbox.grid(row=2, column=1, sticky="w", pady=6)
 
-        self.error_label = make_label(self.content_area, "", bold=True, color=ERROR_TEXT_COLOR)
-        self.error_label.pack(anchor="w", pady=(8, 0))
         self.number_entry.focus_set()
 
     def make_entry(self, parent, example):
@@ -178,17 +183,20 @@ class RegisterScreen(Screen):
         entry.bind("<KeyPress>", self.app.record_touch, add="+")  # 入力中は「操作中」にする
         return entry
 
+    def show_error_text(self, text):
+        self.note_label.configure(text=text, text_color=ERROR_TEXT_COLOR, font=make_font(17, True))
+
     def register(self):
         number = self.number_entry.get().strip()
         name = self.name_entry.get().strip()
         if number == "" or name == "":
-            self.error_label.configure(text="社員番号と氏名の両方を入れてください。")
+            self.show_error_text("社員番号と氏名の両方を入れてください。")
             return
 
         try:
             self.app.database.add_user(number, name, self.card_id)
         except RentalError as e:
-            self.error_label.configure(text=e.message)
+            self.show_error_text(e.message)
             return
         log.info("利用者を登録: %s", number)
 

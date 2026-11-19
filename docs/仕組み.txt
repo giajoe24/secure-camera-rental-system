@@ -1,0 +1,99 @@
+プログラムの仕組み
+==================
+
+■ ファイルの役割
+
+  main.py          起動するファイル。DB・カードリーダー・ロックを用意して、画面(App)を出す
+  config.py        設定(GPIO の番号、待ち時間、貸出時間の選択肢など)
+  gui.py           ウィンドウ本体(App)。上の帯と時計、画面の切り替え、エラー画面
+  screens.py       画面ひとつひとつ(ホーム、社員証、時間、確認、扉、完了、エラー)
+  gui_parts.py     画面の部品(色、フォント、ボタン)と、全画面の土台(Screen)
+  db.py            DB(SQLite)の読み書き
+  card_reader.py   社員証の読み取り(RC-S380 / nfcpy)
+  lock.py          電磁ロック(GPIO18 で MOSFET)とマイクロスイッチ(GPIO23)
+  export.py        記録を Excel(exports/rental_log.xlsx)に書き出す
+  register.py      利用者の登録(コマンドで使う)
+  check_*.py       機器をひとつずつ確かめるためのもの
+
+■ 部品のつながり
+
+        main.py
+          │ 作って渡す
+          ▼
+        App(gui.py) ──────────────┐
+          │ 画面を切り替える          │ 持っている
+          ▼                          ▼
+        各画面(screens.py)       database(db.py)  ←→  data/camera_rental.sqlite3
+          │ 使う                    card_reader(card_reader.py)  ←→ RC-S380
+          │                         lock(lock.py)  ←→ GPIO18 → MOSFET → LE-53
+          │                                           GPIO23 ← マイクロスイッチ
+          └ 部品は gui_parts.py から
+
+  画面は App の database / card_reader / lock を使う(self.app.database のように)。
+  画面どうしは直接つながっていない。次の画面に行くときは self.app.show(次の画面, 渡すもの) を呼ぶ。
+
+■ データの流れ(貸出の例)
+
+  1. ホームで「カメラを借りる」
+       HomeScreen.start_borrow → app.show(ScanScreen)
+  2. 社員証をかざす
+       ScanScreen が card_reader.read_card を別スレッドで動かす(concurrent.futures)
+       100ms ごとに「読めたか」を見て、読めたらカードID(例: 012E4CAA...)を受け取る
+       database.find_user_by_card(カードID) で利用者を探す。いなければエラー画面
+  3. 時間を選ぶ → OK
+       TimeScreen。返却予定 = 今 + 選んだ時間 を下の帯に出す
+  4. 確認画面で「借りる」
+       ConfirmScreen.borrow → database.start(貸出, 利用者, app.open_door, 返却予定)
+         DB に「解錠」の行を追加 → lock.open()(5ms のパルス)→ commit
+         解錠に失敗したら rollback(行は残らない)
+  5. 扉の画面
+       DoorScreen が 0.2 秒ごとに lock.is_locked() を見る
+         開いた → 「扉を閉めてください」
+         閉まった → database.finish(...) で「完了」の行を追加 → 完了画面
+         30 秒開かれなかった → database.cancel(...) で「取り消し」の行を追加
+       最後に export.update_excel で Excel を作り直す
+  6. 完了画面 → 5 秒でホーム
+       ホームは database.current_rental() で「最後の完了の行が貸出か」を見て、貸出中と出す
+
+  返却も同じ。違うのは 3 の代わりに返却の確認画面(ReturnConfirmScreen)が出ることだけ。
+
+■ DB のテーブル
+
+  users(利用者)
+    id / employee_number(社員番号)/ name(氏名)/ card_id(カードID)
+
+  logs(操作の記録。追加するだけ)
+    id / time(日時)/ action(貸出・返却)/ step(解錠・完了・取り消し)
+    / user_id(操作した人)/ due_at(返却予定。貸出のときだけ)/ note(メモ)
+
+  例: 山田さんが借りて、森さんが返した
+    1  10:00:00  貸出  解錠  山田  返却予定 11:00
+    2  10:00:20  貸出  完了  山田  返却予定 11:00
+    3  10:50:00  返却  解錠  森
+    4  10:50:15  返却  完了  森
+
+  「貸出中か」は、最後の「完了」の行(2 か 4)が貸出か返却かで決まる。
+
+■ 別スレッドにしているところ
+
+  社員証の読み取りだけ。かざされるまで最大 30 秒待つので、
+  画面と同じところで待つと画面が固まる。
+  ThreadPoolExecutor(max_workers=1) なので、読み取りは同時に 1 つだけ(リーダーの取り合いにならない)。
+  customtkinter は別スレッドから触れないので、結果は画面側が after() で見に行く。
+
+■ 画面の配置(pack と grid)
+
+  全体: 上から 赤い線 / 帯(タイトルと時計)/ 画面   … pack
+  画面(Screen): 上から 手順 / 見出し / 中身 / 下の帯 … pack
+    下の帯は side="bottom" で先に置くので、中身が多くても必ず見える
+  ボタンを並べるところ(時間の 6 つ、ホームの 2 つ、確認の表)… grid
+  画面の切り替え: 次の画面を作り終えてから前の画面を消して pack する(ちらつかないように)
+
+■ このリポジトリ(全部入り)で増えているファイル
+
+  overdue_display.py   期限切れの表示(ホーム)
+  overdue_record.py    延滞の記録(完了画面、履歴)
+  extend.py            延長(記録は「延長」の行を足す)
+  backup.py            DB のバックアップ
+  admin_screen.py      管理画面(admins テーブルを使う)
+  どれも screens.py などから「if config.USE_〜:」の 1 行で呼ばれる。False にすれば MUST だけの動きになる。

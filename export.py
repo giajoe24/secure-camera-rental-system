@@ -1,8 +1,11 @@
 # 記録をファイルにして exports/ に保存する(管理画面から使う)
 #   Excel : シート「貸出一覧」と「操作の記録」(logs テーブルの中身そのまま)
 #   CSV   : 貸出一覧だけ(Excel がない PC でも開ける)
+# exports/rental_log.xlsx は、貸出・返却が終わるたびに自動で作り直す(update_excel)
 
 import csv
+import logging
+import os
 from datetime import datetime
 
 from openpyxl import Workbook
@@ -12,6 +15,8 @@ from openpyxl.utils import get_column_letter
 import config
 import overdue_record
 from db import minutes_past, parse_time
+
+log = logging.getLogger(__name__)
 
 HEADER_FILL = PatternFill("solid", fgColor="1E4FA3")
 HEADER_FONT = Font(bold=True, color="FFFFFF")
@@ -82,7 +87,8 @@ def add_sheet(book, title, headers, widths, rows):
     return sheet
 
 
-def export_to_excel(database, output_dir):
+def export_to_excel(database, output_dir, file_name=None):
+    # file_name を指定しなければ、日時入りの名前で保存する
     now = datetime.now()
     rentals = database.list_rentals()
 
@@ -108,10 +114,24 @@ def export_to_excel(database, output_dir):
     add_sheet(book, "操作の記録", ["番号", "日時", "操作", "段階", "社員番号", "氏名", "返却予定", "メモ"],
               [8, 18, 8, 10, 12, 16, 18, 30], log_rows)
 
+    if file_name is None:
+        file_name = now.strftime("rental_log_%Y%m%d_%H%M%S.xlsx")
     output_dir.mkdir(exist_ok=True)
-    path = output_dir / now.strftime("rental_log_%Y%m%d_%H%M%S.xlsx")
-    book.save(path)
+    path = output_dir / file_name
+
+    # いったん別の名前で保存してから置き換える(途中で止まっても、壊れたファイルが残らないように)
+    temp_path = path.with_suffix(".tmp")
+    book.save(temp_path)
+    os.replace(temp_path, path)
     return path
+
+
+def update_excel(database):
+    # 失敗しても貸出・返却は止めない(ログに残すだけ)
+    try:
+        export_to_excel(database, config.EXPORT_DIR, "rental_log.xlsx")
+    except Exception:
+        log.exception("Excel の記録を更新できませんでした")
 
 
 def export_to_csv(database, output_dir):

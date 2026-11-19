@@ -13,6 +13,7 @@ import customtkinter
 
 import admin_screen
 import config
+import export
 import extend
 import overdue_display
 import overdue_record
@@ -34,6 +35,8 @@ def can_use_lock(lock):
 
 
 class HomeScreen(Screen):
+    idle_timeout = False   # もうホームなので戻さない(作り直すとちらつくため)
+
     def __init__(self, app):
         super().__init__(app)
         rental = app.database.current_rental()
@@ -210,8 +213,9 @@ class TimeScreen(Screen):
             button.grid(row=i // 3, column=i % 3, sticky="ew", padx=6, pady=6)
             self.time_buttons[minutes] = button
 
-        self.due_label = make_label(self.content_area, "時間を選ぶと、返却予定が出ます。", color=SUB_TEXT_COLOR)
-        self.due_label.pack(anchor="w", padx=6, pady=(10, 0))
+        # 返却予定は下の帯に出す(画面が狭くても必ず見えるように)
+        self.due_label = self.add_footer_label()
+        self.due_label.configure(text="時間を選んでください", text_color=SUB_TEXT_COLOR)
 
         # 確認画面から戻ってきたときは、前に選んだ時間を選んでおく
         if selected_minutes is not None:
@@ -223,24 +227,28 @@ class TimeScreen(Screen):
             show_as_selected(button, m == minutes)
 
         due_at = datetime.now() + timedelta(minutes=minutes)
-        self.due_label.configure(text=f"返却予定  {format_date_time(due_at)}", font=make_font(22, True),
-                                 text_color=TEXT_COLOR)
+        self.due_label.configure(text=f"返却予定 {format_date_time(due_at)}", text_color=TEXT_COLOR)
         enable_main_button(self.ok_button)
 
     def go_next(self):
         self.app.show(ConfirmScreen, user=self.user, minutes=self.selected_minutes)
 
 
-def make_table(parent, rows):
+def make_table(parent, rows, columns=1):
     # 「項目  値」の表。rows は [(項目, 値), ...]
+    # columns=2 にすると2列に並べる(行が多くて縦に入らないとき)
     table = customtkinter.CTkFrame(parent, fg_color="transparent")
     table.pack(fill="x")
-    table.grid_columnconfigure(0, minsize=150)
-    table.grid_columnconfigure(1, weight=1)
+    for c in range(columns):
+        table.grid_columnconfigure(c * 2, minsize=110)
+        table.grid_columnconfigure(c * 2 + 1, weight=1)
+
     for i, (name, value) in enumerate(rows):
-        make_label(table, name, color=SUB_TEXT_COLOR).grid(row=i * 2, column=0, sticky="w", pady=8)
-        make_label(table, value, 20, True).grid(row=i * 2, column=1, sticky="w")
-        make_line(table).grid(row=i * 2 + 1, column=0, columnspan=2, sticky="ew")
+        row = i // columns
+        column = (i % columns) * 2
+        make_label(table, name, color=SUB_TEXT_COLOR).grid(row=row * 2, column=column, sticky="w", pady=8)
+        make_label(table, value, 20, True).grid(row=row * 2, column=column + 1, sticky="w", padx=(0, 12))
+        make_line(table).grid(row=row * 2 + 1, column=column, columnspan=2, sticky="ew")
 
 
 class ConfirmScreen(Screen):
@@ -295,7 +303,7 @@ class ReturnConfirmScreen(Screen):
             ("借りた人", f"{rental['name']} さん"),
             ("貸出日時", format_date_time(parse_time(rental["rented_at"]))),
             ("返却予定", format_date_time(parse_time(rental["due_at"]))),
-        ])
+        ], columns=2)
 
         self.rental = rental
         self.back_button = self.add_left_button("戻る", app.go_home)
@@ -399,6 +407,7 @@ class DoorScreen(Screen):
             self.app.show_error(e)
             return
         log.info("%sの完了(施錠を確認): %s", self.action, self.user["employee_number"])
+        export.update_excel(self.app.database)
         self.app.show(DoneScreen, action=self.action, due_at=self.due_at, rental=self.rental)
 
     def give_up(self):
@@ -408,6 +417,7 @@ class DoorScreen(Screen):
             self.app.show_error(e)
             return
         log.info("%sの取り消し(扉が開かれなかった): %s", self.action, self.user["employee_number"])
+        export.update_excel(self.app.database)
         self.app.show(MessageScreen, title=f"{self.action}を取り消しました",
                       message="扉が開かれなかったため、取り消しました。もう一度最初からやり直してください。",
                       tag="取り消し")

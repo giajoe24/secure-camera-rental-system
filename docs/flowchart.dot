@@ -1,0 +1,43 @@
+// 貸出・返却の流れ(dot -Tpng flowchart.dot -o flowchart.png で画像にする)
+digraph flow {
+  graph [fontname="Noto Sans CJK JP", rankdir=TB, nodesep=0.35, ranksep=0.35, bgcolor=white, pad=0.3];
+  node  [fontname="Noto Sans CJK JP", fontsize=12, shape=box, style="rounded,filled", fillcolor="#FFFFFF", color="#8A939C"];
+  edge  [fontname="Noto Sans CJK JP", fontsize=10, color="#59616B"];
+
+  home [label="ホーム\n(貸出可能 / 貸出中を表示)", fillcolor="#E8EEF9", color="#1E4FA3"];
+  scan [label="社員証をかざす\n(30秒でホームへ)"];
+  known [label="登録されている?", shape=diamond, style=filled, fillcolor="#F2F4F6"];
+  kind [label="借りる? 返す?", shape=diamond, style=filled, fillcolor="#F2F4F6"];
+  free [label="貸出中でない?", shape=diamond, style=filled, fillcolor="#F2F4F6"];
+  rented [label="貸出中?", shape=diamond, style=filled, fillcolor="#F2F4F6"];
+  time [label="貸出時間を選ぶ\n→ 返却予定を表示 → OK"];
+  confirm [label="確認画面\n「借りる」"];
+  rconfirm [label="返却の確認画面\n(返す人・借りた人)\n「返す」"];
+  unlock [label="記録「解錠」を追加 → 解錠パルス\n(失敗したら記録も取り消し)", fillcolor="#FFF1CC", color="#7A4D00"];
+  opened [label="30秒以内に\n扉が開いた?", shape=diamond, style=filled, fillcolor="#F2F4F6"];
+  cancel [label="記録「取り消し」を追加\n→ 取り消しの画面", fillcolor="#FCE8EC", color="#A8001F"];
+  closed [label="扉が閉まった?\n(マイクロスイッチで施錠を確認)", shape=diamond, style=filled, fillcolor="#F2F4F6"];
+  warn [label="60秒たったら\n「扉が閉まっていません」\nと警告(点滅なし)", fillcolor="#FFF1CC", color="#7A4D00"];
+  done [label="記録「完了」を追加\n→ 完了画面 → ホーム", fillcolor="#E3F3EA", color="#0F6B3E"];
+  error [label="エラー画面\n(もう一度 / ホームへ)", fillcolor="#FCE8EC", color="#A8001F"];
+
+  home -> scan [label="借りる / 返す"];
+  scan -> known;
+  known -> error [label="いいえ"];
+  known -> kind [label="はい"];
+  kind -> free [label="借りる"];
+  kind -> rented [label="返す"];
+  free -> time [label="はい"];
+  free -> error [label="いいえ"];
+  rented -> rconfirm [label="はい\n(借りた本人でなくてもよい)"];
+  rented -> error [label="いいえ"];
+  time -> confirm;
+  confirm -> unlock;
+  rconfirm -> unlock;
+  unlock -> opened;
+  opened -> cancel [label="いいえ"];
+  opened -> closed [label="はい"];
+  closed -> warn [label="まだ"];
+  warn -> closed;
+  closed -> done [label="はい"];
+}

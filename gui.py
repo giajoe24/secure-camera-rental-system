@@ -42,6 +42,8 @@ class App(customtkinter.CTk):
         self.configure(fg_color=WHITE)
         if config.FULLSCREEN:
             self.attributes("-fullscreen", True)
+            # 起動した直後だと全画面にならないことがあるので、ウィンドウが出てからもう一度
+            self.after(500, self.attributes, "-fullscreen", True)
             self.configure(cursor="none")   # タッチで使うのでマウスの矢印は出さない
 
         self.bind("<Escape>", self.exit_fullscreen)       # 保守用
@@ -86,14 +88,14 @@ class App(customtkinter.CTk):
         self.after(1000, self.every_second)
 
     def show(self, screen_class, **kwargs):
-        # 新しい画面を前の画面の上に重ねてから、前の画面を消す。
-        # 先に消すと一瞬なにもない画面が見えて、ちらつくため。
-        old_screen = self.screen
-        self.screen = screen_class(self, **kwargs)
-        self.screen.place(x=0, y=0, relwidth=1, relheight=1)
-        if old_screen is not None:
-            old_screen.leave()
-            old_screen.destroy()
+        # 新しい画面を作り終えてから、前の画面を消して、新しい画面を出す。
+        # (前の画面を先に消すと、作っている間なにもない画面が見えてちらつくため)
+        new_screen = screen_class(self, **kwargs)
+        if self.screen is not None:
+            self.screen.leave()
+            self.screen.destroy()
+        self.screen = new_screen
+        self.screen.pack(fill="both", expand=True)
         self.last_touch_time = time.monotonic()
 
     def go_home(self):

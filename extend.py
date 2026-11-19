@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import customtkinter
 
 import config
+import export
 from db import DONE, RentalError, parse_time
 from gui_parts import (GREEN_TAG, SCREEN_PADDING, SUB_TEXT_COLOR, TEXT_COLOR, Screen, disable_button, enable_main_button,
                        format_date_time, format_minutes, make_font, make_label, make_sub_button, make_tag,
@@ -85,16 +86,16 @@ class ExtendScreen(Screen):
             button.grid(row=i // 4, column=i % 4, sticky="ew", padx=6, pady=6)
             self.time_buttons[minutes] = button
 
-        self.due_label = make_label(self.content_area, "時間を選ぶと、新しい返却予定が出ます。", color=SUB_TEXT_COLOR)
-        self.due_label.pack(anchor="w", padx=6, pady=(10, 0))
+        # 新しい返却予定は下の帯に出す(画面が狭くても必ず見えるように)
+        self.due_label = self.add_footer_label()
+        self.due_label.configure(text="時間を選んでください", text_color=SUB_TEXT_COLOR)
 
     def select(self, minutes):
         for m, button in self.time_buttons.items():
             show_as_selected(button, m == minutes)
 
         self.new_due = new_due_at(self.rental, minutes, datetime.now())
-        self.due_label.configure(text=f"新しい返却予定  {format_date_time(self.new_due)}", font=make_font(22, True),
-                                 text_color=TEXT_COLOR)
+        self.due_label.configure(text=f"新しい返却予定 {format_date_time(self.new_due)}", text_color=TEXT_COLOR)
         enable_main_button(self.ok_button)
 
     def extend(self):
@@ -104,6 +105,7 @@ class ExtendScreen(Screen):
         except Exception as e:
             self.app.show_error(e)
             return
+        export.update_excel(self.app.database)
         self.app.show(ExtendDoneScreen, new_due=self.new_due)
 
 

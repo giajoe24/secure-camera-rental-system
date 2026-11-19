@@ -1,6 +1,7 @@
 # 画面で使う部品(色、フォント、ボタンなど)と、全画面の土台 Screen
 #
 # 7インチ(800×480)のタッチモニターに合わせている。
+# 全画面にならずに上にタブやタイトルバーが出ても切れないよう、縦 416px でも収まるようにしている。
 #   ・ボタンは高さ 56px 以上(約 10mm。指で押しやすい大きさ)、ボタンどうしは 12px 以上あける
 #   ・文字は 16px 以上。背景との明るさの差(コントラスト比)は 4.5 以上
 #   ・押すボタンは青。赤はエラー、黄は警告、緑は完了だけに使う(安全色の意味とそろえる)
@@ -36,7 +37,7 @@ CIRCLED_NUMBERS = ["①", "②", "③", "④", "⑤"]
 
 # ---- 大きさ ----
 SCREEN_PADDING = 24
-FOOTER_HEIGHT = 80
+FOOTER_HEIGHT = 72
 BUTTON_HEIGHT = 56
 TEXT_WIDTH = 750   # 長い文はこの幅で折り返す
 
@@ -165,14 +166,14 @@ class Screen(customtkinter.CTkFrame):
         self.footer_line.pack(side="bottom", fill="x")
 
         self.top_area = tkinter.Frame(self, bg=WHITE)
-        self.top_area.pack(fill="x", padx=SCREEN_PADDING, pady=(14, 0))
+        self.top_area.pack(fill="x", padx=SCREEN_PADDING, pady=(10, 0))
 
         self.content_area = customtkinter.CTkFrame(self, fg_color="transparent")
-        self.content_area.pack(fill="both", expand=True, padx=SCREEN_PADDING, pady=12)
+        self.content_area.pack(fill="both", expand=True, padx=SCREEN_PADDING, pady=10)
 
     def show_steps(self, names, current):
         # ① 社員証 → ② 貸出時間 → … を出して、今の手順を青の太字 + 下線にする
-        bar = tkinter.Frame(self.step_area, bg=WHITE, height=40)
+        bar = tkinter.Frame(self.step_area, bg=WHITE, height=36)
         bar.pack(fill="x")
         bar.pack_propagate(False)
 
@@ -218,6 +219,12 @@ class Screen(customtkinter.CTkFrame):
         button = make_main_button(self.footer, text, command)
         button.pack(side="right", padx=SCREEN_PADDING)
         return button
+
+    def add_footer_label(self):
+        # 下の帯の、左右のボタンの間に置く文字(返却予定など、必ず見せたいもの)
+        label = make_label(self.footer, "", 20, True)
+        label.pack(side="left", expand=True)
+        return label
 
     def run_later(self, ms, function):
         # after() と同じ。画面を離れるときにまとめて取り消せるよう覚えておく

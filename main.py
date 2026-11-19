@@ -7,6 +7,7 @@ from logging.handlers import RotatingFileHandler
 import admin_screen
 import backup
 import config
+import export
 from card_reader import NfcCardReader
 from db import Database
 from gui import App
@@ -37,6 +38,7 @@ def main():
     unfinished = database.close_unfinished()
     if unfinished is not None:
         logging.warning("途中で止まっていた%sを取り消しました", unfinished["action"])
+    export.update_excel(database)
 
     card_reader = NfcCardReader(config.CARD_READER_PATH, config.CARD_TARGETS)
     lock = GpioLock(config.LOCK_GPIO_PIN, config.LOCK_ACTIVE_HIGH, config.LOCK_SWITCH_GPIO_PIN)
