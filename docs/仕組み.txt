@@ -58,6 +58,8 @@
   返却も同じ。違うのは 3 の代わりに返却の確認画面(ReturnConfirmScreen)が出ることだけ。
 
 ■ DB のテーブル
+  (いつ・どの関数で・どのテーブルを読み書きするかは docs/db_flow.png)
+
 
   users(利用者)
     id / employee_number(社員番号)/ name(氏名)/ card_id(カードID)
