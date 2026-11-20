@@ -1,0 +1,19 @@
+digraph G {
+  rankdir=LR;
+  graph [fontname="Noto Sans CJK JP", fontsize=14, bgcolor="white", pad=0.3, dpi=150, nodesep=0.35, ranksep=0.45];
+  node  [fontname="Noto Sans CJK JP", fontsize=13, shape=box, style="rounded,filled", fillcolor="#F2F4F7", color="#98A2B3", margin="0.18,0.08"];
+  edge  [fontname="Noto Sans CJK JP", fontsize=11, color="#475467", fontcolor="#344054"];
+  label="1 回の貸出で logs に書かれる行"; labelloc=t; fontsize=18;
+  press [label="「借りる」を押す", shape=oval, fillcolor="#D1E9FF", color="#2E90FA"];
+  r1 [label="貸出|解錠", shape=record, style=filled, fillcolor="#FEF0C7"];
+  r2 [label="貸出|完了", shape=record, style=filled, fillcolor="#D1FADF"];
+  r3 [label="貸出|取り消し", shape=record, style=filled, fillcolor="#FEE4E2"];
+  r4 [label="貸出|取り消し", shape=record, style=filled, fillcolor="#FEE4E2"];
+  ok [label="ここで初めて\n「借りた」ことになる", shape=plain, style="", fontcolor="#027A48"];
+  ng [label="借りたことにならない", shape=plain, style="", fontcolor="#B42318"];
+  press -> r1 [label="すぐ書く"];
+  r1 -> r2 [label="扉が開いて\n閉まった"];
+  r1 -> r3 [label="30 秒\n開かなかった"];
+  r1 -> r4 [label="停電で止まった\n→ 次の起動で"];
+  r2 -> ok [style=dashed, arrowhead=none]; r3 -> ng [style=dashed, arrowhead=none]; r4 -> ng [style=dashed, arrowhead=none];
+}

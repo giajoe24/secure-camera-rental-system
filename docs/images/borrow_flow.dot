@@ -1,0 +1,19 @@
+digraph G {
+  rankdir=LR;
+  graph [fontname="Noto Sans CJK JP", fontsize=14, bgcolor="white", pad=0.3, dpi=150, nodesep=0.35, ranksep=0.45];
+  node  [fontname="Noto Sans CJK JP", fontsize=13, shape=box, style="rounded,filled", fillcolor="#F2F4F7", color="#98A2B3", margin="0.18,0.08"];
+  edge  [fontname="Noto Sans CJK JP", fontsize=11, color="#475467", fontcolor="#344054"];
+  label="貸出の流れ(画面と、そのとき裏で起きること)"; labelloc=t; fontsize=18;
+  node [fillcolor="#D1E9FF", color="#2E90FA"];
+  h [label="① ホーム\nHomeScreen"]; s [label="② 社員証\nScanScreen"]; t [label="③ 貸出時間\nTimeScreen"];
+  c [label="④ 確認\nConfirmScreen"]; u [label="⑤ ロック\nUnlockScreen"]; d [label="⑥ 完了\nDoneScreen"];
+  x [label="取り消しの画面", fillcolor="#FEE4E2", color="#F04438"];
+  h -> s [label="借りる"]; s -> t [label="読めた"]; t -> c [label="OK"]; c -> u [label="借りる"];
+  u -> d [label="扉が閉まった"]; u -> x [label="30 秒開かない"];
+  node [shape=note, style=filled, fillcolor="#FFFFFF", color="#98A2B3", fontsize=11];
+  hn [label="DB を読む\n(今 貸出中?)"]; sn [label="リーダーで読む\nDB で本人確認"]; tn [label="何も書かない"];
+  cn [label="DB に「解錠」\n→ ロックを外す", fillcolor="#FEF0C7"]; un [label="スイッチを 0.2 秒ごとに見る\n閉まったら「完了」\nExcel を作り直す", fillcolor="#FEF0C7"]; dn [label="5 秒でホームへ"];
+  edge [style=dotted, arrowhead=none];
+  {rank=same; h; hn;} {rank=same; s; sn;} {rank=same; t; tn;} {rank=same; c; cn;} {rank=same; u; un;} {rank=same; d; dn;}
+  h -> hn; s -> sn; t -> tn; c -> cn; u -> un; d -> dn;
+}

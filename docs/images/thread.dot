@@ -1,0 +1,21 @@
+digraph G {
+  rankdir=TB;
+  graph [fontname="Noto Sans CJK JP", fontsize=14, bgcolor="white", pad=0.3, dpi=150, nodesep=0.35, ranksep=0.45];
+  node  [fontname="Noto Sans CJK JP", fontsize=13, shape=box, style="rounded,filled", fillcolor="#F2F4F7", color="#98A2B3", margin="0.18,0.08"];
+  edge  [fontname="Noto Sans CJK JP", fontsize=11, color="#475467", fontcolor="#344054"];
+  label="社員証の読み取りを別スレッドにするしくみ"; labelloc=t; fontsize=16;
+  subgraph cluster_main { label="画面(メインのスレッド)\n止まると画面が固まる"; style="rounded,filled"; fillcolor="#EFF8FF"; color="#2E90FA";
+    m1 [label="ScanScreen を出す", fillcolor="white"];
+    m2 [label="submit():読み取りを頼む\n→ 引換券(future)をもらう", fillcolor="white"];
+    m3 [label="check_result()\nfuture.done()? を 0.1 秒ごとに見る\n(その間も画面は動く)", fillcolor="white"];
+    m4 [label="future.result() でカードID\n→ use_card()", fillcolor="#D1FADF"];
+    m1 -> m2 -> m3; m3 -> m3 [label="まだ"]; m3 -> m4 [label="終わった"];
+  }
+  subgraph cluster_worker { label="読み取り(別スレッド)\n止まっても画面は平気"; style="rounded,filled"; fillcolor="#FFF7ED"; color="#F79009";
+    w1 [label="read_card()\nconnect() でかざされるまで待つ\n(最大 30 秒)", fillcolor="white"];
+    w2 [label="カードID を返す", fillcolor="white"];
+    w1 -> w2;
+  }
+  m2 -> w1 [style=dashed, label="頼む"];
+  w2 -> m3 [style=dashed, label="結果が入る"];
+}

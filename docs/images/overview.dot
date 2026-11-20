@@ -1,0 +1,35 @@
+digraph G {
+  rankdir=LR;
+  graph [fontname="Noto Sans CJK JP", fontsize=14, bgcolor="white", pad=0.3, dpi=150, nodesep=0.35, ranksep=0.45];
+  node  [fontname="Noto Sans CJK JP", fontsize=13, shape=box, style="rounded,filled", fillcolor="#F2F4F7", color="#98A2B3", margin="0.18,0.08"];
+  edge  [fontname="Noto Sans CJK JP", fontsize=11, color="#475467", fontcolor="#344054"];
+  label="全体像:機器 → プログラム → 記録"; labelloc=t; fontsize=18;
+  subgraph cluster_dev { label="機器"; style="rounded,filled"; fillcolor="#FFF7ED"; color="#F79009";
+    card [label="社員証", fillcolor="white"];
+    reader [label="カードリーダー\nRC-S380", fillcolor="white"];
+    monitor [label="タッチモニター", fillcolor="white"];
+    lockdev [label="電磁ロック LE-53\n(スイッチ内蔵)", fillcolor="white"];
+  }
+  subgraph cluster_prog { label="プログラム(ラズパイ)"; style="rounded,filled"; fillcolor="#EFF8FF"; color="#2E90FA";
+    cr [label="card_reader.py\n社員証を読む", fillcolor="white"];
+    gui [label="gui.py / screens.py\n画面", fillcolor="#D1E9FF"];
+    db [label="db.py\n記録を書く・読む", fillcolor="white"];
+    lk [label="lock.py\nロックを外す・施錠を見る", fillcolor="white"];
+    ex [label="export.py\nExcel を作る", fillcolor="white"];
+  }
+  subgraph cluster_data { label="できるファイル"; style="rounded,filled"; fillcolor="#ECFDF3"; color="#12B76A";
+    sq [label="data/camera_rental.sqlite3\n正式な記録", fillcolor="white"];
+    xl [label="exports/rental_log.xlsx\n見る用のコピー", fillcolor="white"];
+  }
+  card -> reader [label="かざす"];
+  reader -> cr [label="USB"];
+  cr -> gui [label="カードID"];
+  monitor -> gui [label="タッチ", dir=both];
+  gui -> db [label="解錠/完了/取り消し"];
+  gui -> lk;
+  lk -> lockdev [label="GPIO18:解錠パルス →\n← GPIO23:施錠中?", dir=both];
+  db -> sq;
+  gui -> ex [label="完了・取り消しのたび"];
+  ex -> xl;
+  sq -> ex [style=dashed, label="読む"];
+}

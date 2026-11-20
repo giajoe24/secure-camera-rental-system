@@ -1,0 +1,17 @@
+digraph G {
+  rankdir=TB;
+  graph [fontname="Noto Sans CJK JP", fontsize=14, bgcolor="white", pad=0.3, dpi=150, nodesep=0.35, ranksep=0.45];
+  node  [fontname="Noto Sans CJK JP", fontsize=13, shape=box, style="rounded,filled", fillcolor="#F2F4F7", color="#98A2B3", margin="0.18,0.08"];
+  edge  [fontname="Noto Sans CJK JP", fontsize=11, color="#475467", fontcolor="#344054"];
+  label="database.start() の順番と、失敗したときの動き"; labelloc=t; fontsize=16;
+  a [label="① 今の状態を確かめる\n(貸出中なのに借りようとしていない?)"];
+  b [label="② logs に「解錠」を書く\n(まだ確定していない)"];
+  c [label="③ ロックを外す(unlock)"];
+  d [label="④ 確定(commit)", fillcolor="#D1FADF", color="#12B76A"];
+  e1 [label="エラー画面\n記録なし・扉も開かない", fillcolor="#FEE4E2", color="#F04438"];
+  e2 [label="扉は開かない\n(③ まで行かない)", fillcolor="#FEE4E2", color="#F04438"];
+  e3 [label="rollback\n② の行は消える", fillcolor="#FEE4E2", color="#F04438"];
+  a -> b [label="OK"]; b -> c [label="OK"]; c -> d [label="OK"];
+  a -> e1 [label="NG", color="#F04438"]; b -> e2 [label="DB が壊れている\n容量がない", color="#F04438"]; c -> e3 [label="GPIO が\n動かない", color="#F04438"];
+  {rank=same; a; e1;} {rank=same; b; e2;} {rank=same; c; e3;}
+}

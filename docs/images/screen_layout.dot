@@ -1,0 +1,15 @@
+digraph G {
+  graph [fontname="Noto Sans CJK JP", fontsize=14, bgcolor="white", pad=0.3, dpi=150, nodesep=0.35, ranksep=0.45];
+  node  [fontname="Noto Sans CJK JP", fontsize=13, shape=box, style="rounded,filled", fillcolor="#F2F4F7", color="#98A2B3", margin="0.18,0.08"];
+  edge  [fontname="Noto Sans CJK JP", fontsize=11, color="#475467", fontcolor="#344054"];
+  node [shape=plaintext, style="", fillcolor="white"];
+  s [label=<
+<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="10" COLOR="#98A2B3">
+  <TR><TD COLSPAN="2" BGCOLOR="#D92D20"><FONT COLOR="white">赤い線と帯(タイトル・時計)── App が作る</FONT></TD></TR>
+  <TR><TD COLSPAN="2" BGCOLOR="#EFF8FF" ALIGN="LEFT">step_area:① 社員証 → ② 貸出時間 → …(show_steps)</TD></TR>
+  <TR><TD COLSPAN="2" BGCOLOR="#F9FAFB" ALIGN="LEFT">top_area:見出しと説明(show_title)</TD></TR>
+  <TR><TD COLSPAN="2" BGCOLOR="white" HEIGHT="90">content_area:画面ごとの中身(ボタン・表など)</TD></TR>
+  <TR><TD BGCOLOR="#F2F4F7" ALIGN="LEFT">「戻る」(add_left_button)</TD><TD BGCOLOR="#D1E9FF" ALIGN="RIGHT">進むボタン(add_right_button)</TD></TR>
+</TABLE>>];
+  label="どの画面も同じ 4 つの場所でできている(Screen)\nfooter(いちばん下)は先に置くので、中身が多くても必ず見える"; labelloc=b; fontsize=13;
+}

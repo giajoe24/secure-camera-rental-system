@@ -1,0 +1,23 @@
+digraph G {
+  rankdir=TB;
+  graph [fontname="Noto Sans CJK JP", fontsize=14, bgcolor="white", pad=0.3, dpi=150, nodesep=0.35, ranksep=0.45];
+  node  [fontname="Noto Sans CJK JP", fontsize=13, shape=box, style="rounded,filled", fillcolor="#F2F4F7", color="#98A2B3", margin="0.18,0.08"];
+  edge  [fontname="Noto Sans CJK JP", fontsize=11, color="#475467", fontcolor="#344054"];
+  label="ファイルどうしの読み込み(import)の向き\n矢印は「上のファイルが下のファイルを使う」"; labelloc=t; fontsize=16;
+  main [label="main.py\n起動", fillcolor="#FEF0C7"];
+  gui [label="gui.py\nウィンドウ本体(App)", fillcolor="#D1E9FF"];
+  screens [label="screens.py\n画面ひとつひとつ", fillcolor="#D1E9FF"];
+  parts [label="gui_parts.py\n部品と画面の土台", fillcolor="#D1E9FF"];
+  db [label="db.py\n記録", fillcolor="#D1FADF"];
+  ex [label="export.py\nExcel", fillcolor="#D1FADF"];
+  lk [label="lock.py\nロック", fillcolor="#FDEAD7"];
+  cr [label="card_reader.py\n社員証", fillcolor="#FDEAD7"];
+  cfg [label="config.py\n設定(全部のファイルが読む)", shape=note, style=filled, fillcolor="white"];
+  main -> gui; gui -> screens; screens -> parts;
+  screens -> db; screens -> ex; ex -> db;
+  main -> db; main -> lk; main -> cr; main -> ex;
+  gui -> lk [style=dashed, label="エラーの種類だけ"];
+  gui -> cr [style=dashed, label="エラーの種類だけ"];
+  {rank=same; db; lk; cr;}
+  db -> cfg [style=invis];
+}
