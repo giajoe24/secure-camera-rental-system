@@ -2,6 +2,7 @@
 #   python main.py
 
 import logging
+import os
 from logging.handlers import RotatingFileHandler
 
 import admin_screen
@@ -28,6 +29,13 @@ def setup_log():
     )
 
 
+def setup_japanese_input():
+    # 管理画面の氏名を USB キーボードで日本語入力できるようにする(手順は docs/日本語入力の設定.txt)
+    # tkinter は XIM というしくみで fcitx5 とつながる。XMODIFIERS がないとつながらないので、
+    # 自動起動などで設定されていないときはここで入れる(画面を作る前に入れる必要がある)
+    os.environ.setdefault("XMODIFIERS", f"@im={config.INPUT_METHOD}")
+
+
 def main():
     setup_log()
     logging.info("起動")
@@ -51,7 +59,9 @@ def main():
         card_reader = pc_test.PcCardReader()
         lock = pc_test.PcLock()
 
+    setup_japanese_input()
     app = App(database, card_reader, lock)
+    app.tk.call("tk", "useinputmethods", "1")   # 入力欄で日本語入力を使う
     if not config.USE_HARDWARE:
         pc_test.TestWindow(app, card_reader, lock)
 

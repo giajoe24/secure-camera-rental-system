@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 
 def check(app):
     # gui.py の every_second から 1 秒ごとに呼ばれる
-    if app.screen.door_may_be_open:   # 解錠して扉を待っている画面などでは調べない
+    if app.screen.unlock_expected:   # 解錠して扉を待っている画面などでは調べない
         return
     if app.lock.is_locked() is False:
         log.warning("解錠していないのに扉が開きました")
@@ -23,7 +23,7 @@ def check(app):
 
 class ForcedOpenScreen(Screen):
     idle_timeout = False
-    door_may_be_open = True   # この画面にいる間は、もう一度は調べない
+    unlock_expected = True   # この画面にいる間は、もう一度は調べない
 
     def __init__(self, app):
         super().__init__(app)

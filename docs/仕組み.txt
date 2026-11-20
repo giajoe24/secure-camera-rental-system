@@ -43,11 +43,11 @@
   3. 時間を選ぶ → OK
        TimeScreen。返却予定 = 今 + 選んだ時間 を下の帯に出す
   4. 確認画面で「借りる」
-       ConfirmScreen.borrow → database.start(貸出, 利用者, app.open_door, 返却予定)
+       ConfirmScreen.borrow → database.start(貸出, 利用者, app.unlock, 返却予定)
          DB に「解錠」の行を追加 → lock.open()(5ms のパルス)→ commit
          解錠に失敗したら rollback(行は残らない)
   5. 扉の画面
-       DoorScreen が 0.2 秒ごとに lock.is_locked() を見る
+       UnlockScreen が 0.2 秒ごとに lock.is_locked() を見る
          開いた → 「扉を閉めてください」
          閉まった → database.finish(...) で「完了」の行を追加 → 完了画面
          30 秒開かれなかった → database.cancel(...) で「取り消し」の行を追加

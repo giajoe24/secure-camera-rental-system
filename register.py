@@ -9,7 +9,7 @@ import threading
 
 import config
 from card_reader import CardReaderError, NfcCardReader
-from db import Database, RentalError
+from db import EMPLOYEE_NUMBER_DIGITS, Database, RentalError, check_employee_number
 
 
 def ask(question):
@@ -18,6 +18,15 @@ def ask(question):
         answer = input(question).strip()
         if answer != "":
             return answer
+
+
+def ask_employee_number():
+    # 7 桁の数字になるまで聞き直す
+    while True:
+        try:
+            return check_employee_number(ask(f"社員番号({EMPLOYEE_NUMBER_DIGITS} 桁): "))
+        except RentalError as e:
+            print(e.message)
 
 
 def register_one(database, card_reader):
@@ -36,7 +45,7 @@ def register_one(database, card_reader):
         print(f"この社員証はもう登録されています: {user['employee_number']} {user['name']}")
         return
 
-    employee_number = ask("社員番号: ")
+    employee_number = ask_employee_number()
     name = ask("氏名: ")
     if input(f"{employee_number} {name} さんを登録します。よければ y: ").strip() != "y":
         print("登録しませんでした")

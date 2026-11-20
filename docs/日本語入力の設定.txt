@@ -1,0 +1,42 @@
+管理画面で氏名を日本語入力する設定(ラズパイ)
+==========================================
+
+管理画面の「利用者の登録」で、氏名を USB キーボードから日本語(漢字)で打てるようにする。
+日本語入力には fcitx5 + Mozc を使う。プログラム側の設定は済んでいる(main.py の setup_japanese_input)。
+
+1. 日本語入力を入れる
+   sudo apt update
+   sudo apt install fcitx5-mozc
+   im-config -n fcitx5
+
+2. キーボードを日本語配列にする(JIS キーボードのとき)
+   sudo raspi-config
+   → 5 Localisation Options → L3 Keyboard → 「Japanese」「Japanese (OADG 109A)」など
+
+3. X11 に切り替える(Wayland のままだと、tkinter の画面で日本語入力が効かないことがある)
+   sudo raspi-config
+   → 6 Advanced Options → A6 Wayland → W1 X11
+   (全画面表示が安定しない件も、X11 にすると直ることが多い)
+
+4. 再起動する
+   sudo reboot
+
+5. 確かめる
+   - 画面の右上に fcitx5 のアイコン(キーボードの絵)が出ていること
+   - python main.py → 管理画面 → 利用者の登録 → 社員証をかざす
+   - 氏名の欄をタッチして、「半角/全角」キー(または Ctrl+Space)で日本語に切り替える
+   - 「やまだ」と打って Space で「山田」に変換、Enter で確定できれば OK
+
+うまくいかないとき
+- 切り替えても日本語にならない
+  → ターミナルで echo $XMODIFIERS を見る。@im=fcitx でなければ、手順 1 の im-config をやり直して再起動
+  → fcitx5 が動いているか:ps aux | grep fcitx5(なければ fcitx5 & で起動)
+- 変換の候補が画面の裏に隠れる(全画面のとき)
+  → config.py の FULLSCREEN を False にして試す。それで出るなら全画面の問題
+- 自動起動(systemd など)で動かしたときだけ効かない
+  → 日本語入力はデスクトップにログインしたあとに動くので、デスクトップの自動起動
+    (~/.config/autostart など)から main.py を起動する
+
+メモ
+- 社員番号は 7 桁の数字だけ受け付ける。日本語入力のまま全角で打っても、半角に直して登録する
+- register.py(ターミナルで登録)は、ターミナルの日本語入力がそのまま使える

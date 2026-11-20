@@ -29,8 +29,8 @@ class AddonTest(unittest.TestCase):
         self.database.create_tables()
         admin_screen.create_admin_table(self.database)
         events.create_events_table(self.database)
-        self.database.add_user("10001", "管理 太郎", "AAAA")
-        self.database.add_user("10002", "森 航太郎", "BBBB")
+        self.database.add_user("1000001", "管理 太郎", "AAAA")
+        self.database.add_user("1000002", "森 航太郎", "BBBB")
         self.admin = self.database.find_user_by_card("AAAA")
         self.mori = self.database.find_user_by_card("BBBB")
         admin_screen.set_admin(self.database, self.admin, True)
@@ -112,7 +112,7 @@ class AddonTest(unittest.TestCase):
 
         self.assertIsNone(self.database.find_user_by_card("BBBB"))
         self.assertEqual(self.database.list_rentals()[0]["borrower_name"], "森 航太郎")
-        self.database.add_user("10003", "新しい 人", "BBBB")   # 同じ社員証を登録し直せる
+        self.database.add_user("1000003", "新しい 人", "BBBB")   # 同じ社員証を登録し直せる
 
     def test_cannot_delete_user_who_is_renting(self):
         self.borrow(self.mori)

@@ -111,7 +111,7 @@ class App(customtkinter.CTk):
         # 管理画面などで使う。社員証を読んで、読めたら on_card(app, カードID) を呼ぶ
         self.show(ScanScreen, steps=steps, on_card=on_card)
 
-    def open_door(self):
+    def unlock(self):
         self.lock.open()
 
     def close(self):

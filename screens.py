@@ -323,13 +323,13 @@ class ConfirmScreen(Screen):
             # 時間を選んでから押すまでの間も数えるため、返却予定は押した時刻から計算し直す
             due_at = datetime.now() + timedelta(minutes=self.minutes)
         try:
-            self.app.database.start(BORROW, self.user, self.app.open_door, due_at=due_at)
+            self.app.database.start(BORROW, self.user, self.app.unlock, due_at=due_at)
         except Exception as e:
             self.app.show_error(e)
             return
 
         log.info("貸出の解錠: %s 返却予定 %s", self.user["employee_number"], due_at)
-        self.app.show(DoorScreen, action=BORROW, user=self.user, due_at=due_at)
+        self.app.show(UnlockScreen, action=BORROW, user=self.user, due_at=due_at)
 
 
 class ReturnConfirmScreen(Screen):
@@ -358,24 +358,24 @@ class ReturnConfirmScreen(Screen):
         self.update_idletasks()
 
         try:
-            self.app.database.start(RETURN, self.user, self.app.open_door)
+            self.app.database.start(RETURN, self.user, self.app.unlock)
         except Exception as e:
             self.app.show_error(e)
             return
 
         log.info("返却の解錠: %s", self.user["employee_number"])
-        self.app.show(DoorScreen, action=RETURN, user=self.user, rental=self.rental)
+        self.app.show(UnlockScreen, action=RETURN, user=self.user, rental=self.rental)
 
 
-class DoorScreen(Screen):
+class UnlockScreen(Screen):
     # 解錠したあと、扉が開いて、また閉まる(施錠する)のを待つ。
-    #   DOOR_OPEN_WAIT_SECONDS 秒たっても開かれなかったら → 取り消し
-    #   開いたまま DOOR_CLOSE_WARN_SECONDS 秒たったら      → 閉めるように警告(点滅はさせない)
+    #   UNLOCK_WAIT_SECONDS 秒たっても開かれなかったら → 取り消し
+    #   開いたまま UNLOCKED_WARN_SECONDS 秒たったら      → 閉めるように警告(点滅はさせない)
     #   閉まったら                                         → 完了を記録
     # 状態はマイクロスイッチ(lock.is_locked)で 0.2 秒ごとに見る
 
     idle_timeout = False       # 扉が開いている間はホームに戻さない
-    door_may_be_open = True    # 自分で解錠しているので、不正な開放ではない
+    unlock_expected = True    # 自分で解錠しているので、不正な開放ではない
 
     def __init__(self, app, action, user, due_at=None, rental=None):
         # rental: 返却のとき、返すカメラの貸出(延滞の表示に使う)
@@ -416,9 +416,9 @@ class DoorScreen(Screen):
         make_label(self.warning_area, "扉が閉まっていません。扉を閉めてください。", 20, True,
                    YELLOW_TAG[0]).pack(side="left", padx=(0, 12))
 
-        self.watch_door()
+        self.watch_lock()
 
-    def watch_door(self):
+    def watch_lock(self):
         locked = self.app.lock.is_locked()
         now = time.monotonic()
 
@@ -428,11 +428,11 @@ class DoorScreen(Screen):
                 self.open_time = now
                 self.guide_label.configure(text=self.what_to_do)
                 self.note_label.configure(text="扉を閉めると、記録して完了します。")
-            elif now - self.start_time > config.DOOR_OPEN_WAIT_SECONDS:
+            elif now - self.start_time > config.UNLOCK_WAIT_SECONDS:
                 self.give_up()
                 return
             else:
-                remaining = int(config.DOOR_OPEN_WAIT_SECONDS - (now - self.start_time))
+                remaining = int(config.UNLOCK_WAIT_SECONDS - (now - self.start_time))
                 text = f"あと {remaining} 秒以内に扉を開けてください。開けないと取り消しになります。"
                 if self.note_label.cget("text") != text:
                     self.note_label.configure(text=text)
@@ -441,13 +441,13 @@ class DoorScreen(Screen):
             if locked:
                 self.finish()
                 return
-            if now - self.open_time > config.DOOR_CLOSE_WARN_SECONDS and not self.warning_area.winfo_ismapped():
+            if now - self.open_time > config.UNLOCKED_WARN_SECONDS and not self.warning_area.winfo_ismapped():
                 log.warning("扉が閉まっていません")
                 events.add_event(self.app.database, events.LEFT_OPEN,
-                                 f"{self.action}のあと {config.DOOR_CLOSE_WARN_SECONDS} 秒 開いたまま({self.user['name']})")
+                                 f"{self.action}のあと {config.UNLOCKED_WARN_SECONDS} 秒 開いたまま({self.user['name']})")
                 self.warning_area.pack(fill="x", pady=(14, 0))
 
-        self.run_later(200, self.watch_door)
+        self.run_later(200, self.watch_lock)
 
     def finish(self):
         self.state = "完了"

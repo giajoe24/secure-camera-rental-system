@@ -11,10 +11,13 @@
 # 扉が閉まるまでは完了にしないので、扉を開けただけの記録が残っても貸出中にはならない。
 
 import sqlite3
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+EMPLOYEE_NUMBER_DIGITS = 7   # 社員番号の桁数
 
 BORROW = "貸出"
 RETURN = "返却"
@@ -30,6 +33,14 @@ class RentalError(Exception):
         super().__init__(title)
         self.title = title
         self.message = message
+
+
+def check_employee_number(number):
+    # 社員番号は 7 桁の数字だけ。全角の数字(日本語入力のまま打ったとき)は半角に直す
+    number = unicodedata.normalize("NFKC", number).strip()
+    if len(number) != EMPLOYEE_NUMBER_DIGITS or not (number.isascii() and number.isdigit()):
+        raise RentalError("登録できません", f"社員番号は {EMPLOYEE_NUMBER_DIGITS} 桁の数字で入れてください。")
+    return number
 
 
 def normalize_card_id(card_id):
@@ -111,6 +122,7 @@ class Database:
     # ---- 利用者 ----
 
     def add_user(self, employee_number, name, card_id):
+        employee_number = check_employee_number(employee_number)
         try:
             self.execute(
                 "INSERT INTO users (employee_number, name, card_id) VALUES (?, ?, ?)",
@@ -138,7 +150,7 @@ class Database:
             (now.strftime(TIME_FORMAT), action, step, user["id"], due_text, note),
         )
 
-    def start(self, action, user, open_door, due_at=None, now=None):
+    def start(self, action, user, unlock, due_at=None, now=None):
         # 「解錠」を記録して扉を開ける。
         # 記録に失敗したら扉は開けない。扉が開かなかったら記録は取り消し(rollback)。
         conn = self.open()
@@ -151,7 +163,7 @@ class Database:
                     raise RentalError("返却するカメラがありません", "カメラは貸し出されていません。")
 
                 self.add_log(conn, action, UNLOCK, user, due_at, now=now)
-                open_door()
+                unlock()
         finally:
             conn.close()
 

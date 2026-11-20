@@ -7,7 +7,7 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from db import BORROW, CANCEL, DONE, RETURN, UNLOCK, Database, RentalError
+from db import BORROW, CANCEL, DONE, RETURN, UNLOCK, Database, RentalError, check_employee_number
 
 NOW = datetime(2026, 11, 20, 10, 0, 0)
 
@@ -16,7 +16,7 @@ def do_nothing():
     pass
 
 
-def broken_door():
+def broken_unlock():
     raise RuntimeError("扉が開かない")
 
 
@@ -26,8 +26,8 @@ class DatabaseTest(unittest.TestCase):
         self.path = Path(self.folder) / "test.sqlite3"
         self.db = Database(self.path)
         self.db.create_tables()
-        self.db.add_user("10001", "山田 太郎", "01:2e:4c:aa")
-        self.db.add_user("10002", "森 航太郎", "BBBB")
+        self.db.add_user("1000001", "山田 太郎", "01:2e:4c:aa")
+        self.db.add_user("1000002", "森 航太郎", "BBBB")
         self.yamada = self.db.find_user_by_card("012E4CAA")
         self.mori = self.db.find_user_by_card("BBBB")
 
@@ -53,11 +53,11 @@ class DatabaseTest(unittest.TestCase):
 
     def test_same_card_cannot_be_added_twice(self):
         with self.assertRaises(RentalError):
-            self.db.add_user("10003", "別の人", "012E4CAA")
+            self.db.add_user("1000003", "別の人", "012E4CAA")
 
     # ---- 貸出 ----
 
-    def test_not_rented_until_door_is_closed(self):
+    def test_not_rented_until_relocked(self):
         # 解錠しただけでは貸出中にならない(扉が閉まって完了してから)
         due = NOW + timedelta(minutes=30)
         self.db.start(BORROW, self.yamada, do_nothing, due_at=due, now=NOW)
@@ -79,16 +79,16 @@ class DatabaseTest(unittest.TestCase):
         with self.assertRaises(RentalError):
             self.db.start(BORROW, self.mori, do_nothing, due_at=NOW)
 
-    def test_door_not_opened_when_record_fails(self):
+    def test_not_unlocked_when_record_fails(self):
         opened = []
         self.db.execute("DROP TABLE logs")
         with self.assertRaises(Exception):
             self.db.start(BORROW, self.yamada, lambda: opened.append(True), due_at=NOW)
         self.assertEqual(opened, [])
 
-    def test_record_removed_when_door_does_not_open(self):
+    def test_record_removed_when_unlock_fails(self):
         with self.assertRaises(RuntimeError):
-            self.db.start(BORROW, self.yamada, broken_door, due_at=NOW)
+            self.db.start(BORROW, self.yamada, broken_unlock, due_at=NOW)
         self.assertEqual(self.db.list_logs(), [])
 
     # ---- 返却 ----
@@ -132,6 +132,19 @@ class DatabaseTest(unittest.TestCase):
         self.assertIsNotNone(self.db.close_unfinished())
         self.assertEqual(self.steps()[-1], (BORROW, CANCEL))
         self.assertIsNone(self.db.close_unfinished())   # 2回目は何もしない
+
+
+class EmployeeNumberTest(unittest.TestCase):
+    def test_seven_digits_ok(self):
+        self.assertEqual(check_employee_number(" 1234567 "), "1234567")
+
+    def test_full_width_digits_become_half_width(self):
+        self.assertEqual(check_employee_number("１２３４５６７"), "1234567")
+
+    def test_wrong_numbers_rejected(self):
+        for number in ["123456", "12345678", "12345a7", "", "１２３"]:
+            with self.assertRaises(RentalError):
+                check_employee_number(number)
 
 
 if __name__ == "__main__":

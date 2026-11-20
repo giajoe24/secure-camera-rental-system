@@ -135,7 +135,8 @@ class AdminMenuScreen(Screen):
 
 class RegisterScreen(Screen):
     # first_admin=True: 初期設定(最初の管理者を登録する)
-    # 社員番号と氏名は USB キーボードで入れる
+    # 社員番号と氏名は USB キーボードで入れる(氏名は日本語入力。docs/日本語入力の設定.txt)
+    # 社員番号は 7 桁の数字だけ(db.py の check_employee_number)
     def __init__(self, app, card_id, first_admin=False):
         super().__init__(app)
         self.card_id = card_id
@@ -164,11 +165,11 @@ class RegisterScreen(Screen):
         form.grid_columnconfigure(1, weight=1)
 
         make_label(form, "社員番号", color=SUB_TEXT_COLOR).grid(row=0, column=0, sticky="w", pady=6)
-        self.number_entry = self.make_entry(form, "例: 10001")
+        self.number_entry = self.make_entry(form, "7 桁の数字(例: 1234567)")
         self.number_entry.grid(row=0, column=1, sticky="ew", pady=6)
 
         make_label(form, "氏名", color=SUB_TEXT_COLOR).grid(row=1, column=0, sticky="w", pady=6)
-        self.name_entry = self.make_entry(form, "例: 山田 太郎")
+        self.name_entry = self.make_entry(form, "例: 山田 太郎(「半角/全角」キーで日本語)")
         self.name_entry.grid(row=1, column=1, sticky="ew", pady=6)
 
         # 管理者にするか(初期設定のときは必ず管理者なので出さない)

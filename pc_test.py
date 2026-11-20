@@ -70,7 +70,7 @@ class TestWindow(customtkinter.CTkToplevel):
         make_sub_button(self, "利用者を読み直す", self.show_cards, width=290, height=36).pack(padx=12, pady=4)
 
         make_label(self, "扉", 16, True).pack(anchor="w", padx=12, pady=(14, 4))
-        make_sub_button(self, "扉を閉める(施錠)", self.close_door, width=290, height=40).pack(padx=12, pady=3)
+        make_sub_button(self, "扉を閉める(施錠)", self.relock, width=290, height=40).pack(padx=12, pady=3)
         make_sub_button(self, "こじ開ける(不正な開放)", self.force_open, width=290, height=40).pack(padx=12, pady=3)
         self.stuck_box = customtkinter.CTkCheckBox(self, text="解錠しても扉が開かない", font=make_font(14),
                                                    command=self.change_stuck)
@@ -95,7 +95,7 @@ class TestWindow(customtkinter.CTkToplevel):
         unknown.configure(font=make_font(14))
         unknown.pack(pady=2)
 
-    def close_door(self):
+    def relock(self):
         self.lock.locked = True
 
     def force_open(self):
