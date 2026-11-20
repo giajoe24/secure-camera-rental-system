@@ -13,6 +13,7 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 import config
+import events
 import overdue_record
 from db import minutes_past, parse_time
 
@@ -113,6 +114,13 @@ def export_to_excel(database, output_dir, file_name=None):
                          log["name"], to_time(log["due_at"]), log["note"]])
     add_sheet(book, "操作の記録", ["番号", "日時", "操作", "段階", "社員番号", "氏名", "返却予定", "メモ"],
               [8, 18, 8, 10, 12, 16, 18, 30], log_rows)
+
+    # 追加機能: できごと(未登録カード、不正な開放、閉め忘れ、エラー)
+    if config.USE_EVENTS:
+        event_rows = []
+        for event in events.list_events(database):
+            event_rows.append([event["id"], to_time(event["time"]), event["kind"], event["detail"]])
+        add_sheet(book, "できごと", ["番号", "日時", "種類", "内容"], [8, 18, 14, 60], event_rows)
 
     if file_name is None:
         file_name = now.strftime("rental_log_%Y%m%d_%H%M%S.xlsx")

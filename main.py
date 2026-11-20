@@ -7,7 +7,9 @@ from logging.handlers import RotatingFileHandler
 import admin_screen
 import backup
 import config
+import events
 import export
+import pc_test
 from card_reader import NfcCardReader
 from db import Database
 from gui import App
@@ -33,6 +35,7 @@ def main():
     database = Database(config.DB_PATH)
     database.create_tables()
     admin_screen.create_admin_table(database)
+    events.create_events_table(database)
 
     # 前回、解錠したまま止まっていたら取り消しにしておく
     unfinished = database.close_unfinished()
@@ -40,14 +43,22 @@ def main():
         logging.warning("途中で止まっていた%sを取り消しました", unfinished["action"])
     export.update_excel(database)
 
-    card_reader = NfcCardReader(config.CARD_READER_PATH, config.CARD_TARGETS)
-    lock = GpioLock(config.LOCK_GPIO_PIN, config.LOCK_ACTIVE_HIGH, config.LOCK_SWITCH_GPIO_PIN)
+    if config.USE_HARDWARE:
+        card_reader = NfcCardReader(config.CARD_READER_PATH, config.CARD_TARGETS)
+        lock = GpioLock(config.LOCK_GPIO_PIN, config.LOCK_ACTIVE_HIGH, config.LOCK_SWITCH_GPIO_PIN)
+    else:
+        # PC で試すとき:機器の代わりを使い、操作用のテストウィンドウを出す
+        card_reader = pc_test.PcCardReader()
+        lock = pc_test.PcLock()
 
     app = App(database, card_reader, lock)
+    if not config.USE_HARDWARE:
+        pc_test.TestWindow(app, card_reader, lock)
 
     # 追加機能: DB のバックアップ
     if config.USE_BACKUP:
         backup.start_daily_backup(app)
+
     try:
         app.mainloop()
     finally:

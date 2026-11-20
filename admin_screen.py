@@ -10,12 +10,13 @@ import logging
 import customtkinter
 
 import config
+import events
 import export
 import overdue_record
 from db import RentalError, normalize_card_id, parse_time
-from gui_parts import (BLUE, BLUE_TAG, BORDER_COLOR, ERROR_TEXT_COLOR, GREEN_TAG, SUB_TEXT_COLOR, TEXT_COLOR,
-                       WHITE, YELLOW_TAG, Screen, disable_button, format_date_time, make_font, make_label, make_line,
-                       make_sub_button, make_tag)
+from gui_parts import (BLUE, BLUE_TAG, BORDER_COLOR, ERROR_TEXT_COLOR, GREEN_TAG, RED_TAG, SUB_TEXT_COLOR,
+                       TEXT_COLOR, WHITE, YELLOW_TAG, Screen, disable_button, format_date_time, make_font, make_label,
+                       make_line, make_sub_button, make_tag)
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ def delete_user(database, user):
 # ---- ホームから入る ----
 
 def add_button_on_home(home):
+    home.show_footer()
     home.add_left_button("管理者", lambda: start_admin(home.app))
 
 
@@ -115,18 +117,20 @@ class AdminMenuScreen(Screen):
 
         buttons = customtkinter.CTkFrame(self.content_area, fg_color="transparent")
         buttons.pack(fill="both", expand=True)
-        buttons.grid_columnconfigure((0, 1, 2), weight=1, uniform="a")
-        buttons.grid_rowconfigure(0, weight=1)
+        buttons.grid_columnconfigure((0, 1), weight=1, uniform="a")
+        buttons.grid_rowconfigure((0, 1), weight=1, uniform="b")
 
         menu = [
             ("利用者の登録", lambda: app.scan_card(REGISTER_STEPS, new_card_read)),
             ("利用者の一覧", lambda: app.show(UserListScreen)),
             ("貸出の履歴", lambda: app.show(HistoryScreen)),
         ]
+        if config.USE_EVENTS:
+            menu.append(("できごとの記録", lambda: app.show(EventsScreen)))
         for i, (text, command) in enumerate(menu):
             button = make_sub_button(buttons, text, command)
-            button.configure(font=make_font(22, True))
-            button.grid(row=0, column=i, sticky="nsew", padx=6)
+            button.configure(font=make_font(21, True))
+            button.grid(row=i // 2, column=i % 2, sticky="nsew", padx=6, pady=6)
 
 
 class RegisterScreen(Screen):
@@ -361,3 +365,26 @@ class HistoryScreen(Screen):
         self.save_button.configure(text="保存しました")
         make_label(self.top_area, f"exports/ に保存しました: {excel_path.name} と .csv", 16,
                    color=SUB_TEXT_COLOR).pack(anchor="w")
+
+
+class EventsScreen(Screen):
+    # できごと(未登録カード、不正な開放、閉め忘れ、エラー)の新しい 30 件
+    def __init__(self, app):
+        super().__init__(app)
+        self.show_steps(ADMIN_STEPS, 1)
+        self.show_title("できごとの記録(新しい 30 件)")
+        self.add_left_button("メニュー", lambda: app.show(AdminMenuScreen))
+
+        table = make_table(self.content_area, ["日時", "種類", "内容"], [140, 130, 0])
+        rows = events.list_events(app.database)[:30]
+        for i, event in enumerate(rows):
+            if event["kind"] in (events.FORCED_OPEN, events.ERROR):
+                kind = make_tag(table, f" {event['kind']} ", RED_TAG)
+            else:
+                kind = make_tag(table, f" {event['kind']} ", YELLOW_TAG)
+            detail = make_label(table, event["detail"], 16)
+            detail.configure(wraplength=380)   # 長い内容は列の中で折り返す
+            add_table_row(table, i, [format_date_time(parse_time(event["time"])), kind, detail])
+
+        if not rows:
+            show_empty(table, "まだ何も起きていません。", 3)

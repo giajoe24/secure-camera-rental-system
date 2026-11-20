@@ -8,8 +8,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import admin_screen
+import events
 import export
 import extend
+import long_rental
 import overdue_record
 from db import BORROW, RETURN, Database, RentalError, minutes_past
 
@@ -26,6 +28,7 @@ class AddonTest(unittest.TestCase):
         self.database = Database(Path(self.folder) / "test.sqlite3")
         self.database.create_tables()
         admin_screen.create_admin_table(self.database)
+        events.create_events_table(self.database)
         self.database.add_user("10001", "管理 太郎", "AAAA")
         self.database.add_user("10002", "森 航太郎", "BBBB")
         self.admin = self.database.find_user_by_card("AAAA")
@@ -137,8 +140,39 @@ class AddonTest(unittest.TestCase):
         self.borrow(self.mori, 30)
         path = export.export_to_excel(self.database, Path(self.folder) / "exports")
         book = load_workbook(path)
-        self.assertEqual(book.sheetnames, ["貸出一覧", "操作の記録"])
+        self.assertEqual(book.sheetnames, ["貸出一覧", "操作の記録", "できごと"])
         self.assertEqual(book["操作の記録"].max_row, 3)   # 見出し + 解錠 + 完了
+
+
+    def test_someone_else_can_extend(self):
+        self.borrow(self.mori, 60)
+        rental = self.database.current_rental()
+        extend.extend_rental(self.database, self.admin, rental, NOW + timedelta(hours=3))
+
+        last = self.database.list_logs()[0]
+        self.assertEqual((last["action"], last["name"]), ("延長", "管理 太郎"))   # 延ばした人が残る
+        self.assertEqual(self.database.current_rental()["name"], "森 航太郎")      # 借りた人は変わらない
+
+    # ---- できごと ----
+
+    def test_events_are_added(self):
+        events.add_event(self.database, events.UNKNOWN_CARD, "カードID FFFF")
+        events.add_event(self.database, events.FORCED_OPEN, "解錠していないのに扉が開いた")
+        kinds = [e["kind"] for e in events.list_events(self.database)]
+        self.assertEqual(kinds, [events.FORCED_OPEN, events.UNKNOWN_CARD])   # 新しい順
+
+
+    # ---- 日をまたぐ貸出 ----
+
+    def test_long_rental_first_due_is_tomorrow(self):
+        due = long_rental.first_due(NOW)
+        self.assertEqual(due, datetime(2026, 11, 21, 17, 0))
+        self.assertIsNone(long_rental.check_due(due, NOW))
+
+    def test_long_rental_limits(self):
+        self.assertIsNotNone(long_rental.check_due(NOW + timedelta(minutes=10), NOW))   # 近すぎる
+        self.assertIsNotNone(long_rental.check_due(NOW + timedelta(days=32), NOW))      # 遠すぎる
+        self.assertIsNone(long_rental.check_due(NOW + timedelta(days=31), NOW))
 
 
 if __name__ == "__main__":

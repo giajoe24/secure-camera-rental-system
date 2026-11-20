@@ -23,9 +23,12 @@ def ask(question):
 def register_one(database, card_reader):
     print()
     print("登録する社員証をかざしてください(Ctrl+C で終了)")
-    card_id = None
-    while card_id is None:
-        card_id = card_reader.read_card(60, threading.Event())
+    if config.USE_HARDWARE:
+        card_id = None
+        while card_id is None:
+            card_id = card_reader.read_card(60, threading.Event())
+    else:
+        card_id = ask("(PC なのでカードIDを手で入力)カードID: ")
     print("カードID:", card_id)
 
     user = database.find_user_by_card(card_id)

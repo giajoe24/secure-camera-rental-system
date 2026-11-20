@@ -10,6 +10,8 @@ from datetime import datetime
 import customtkinter
 
 import config
+import events
+import forced_open
 from card_reader import CardReaderError
 from db import RentalError
 from gui_parts import BRAND_RED, SCREEN_PADDING, SUB_TEXT_COLOR, WHITE, format_date_time, make_label, make_line
@@ -80,6 +82,10 @@ class App(customtkinter.CTk):
         if self.clock_label.cget("text") != text:
             self.clock_label.configure(text=text)
 
+        # 追加機能: 解錠していないのに扉が開いていないか
+        if config.USE_FORCED_OPEN_CHECK:
+            forced_open.check(self)
+
         # しばらく触られていなければホームに戻す
         if self.screen.idle_timeout and time.monotonic() - self.last_touch_time > config.IDLE_SECONDS:
             log.info("操作がないのでホームに戻ります")
@@ -122,18 +128,22 @@ class App(customtkinter.CTk):
             message = error.message
         elif isinstance(error, LockError):
             log.error("解錠に失敗: %s", error)
+            events.add_event(self.database, events.ERROR, f"解錠に失敗: {error}")
             title = "扉が開きませんでした"
             message = "記録は取り消しました。管理者に連絡してください。"
         elif isinstance(error, CardReaderError):
             log.error("カードリーダーのエラー: %s", error)
+            events.add_event(self.database, events.ERROR, f"カードリーダー: {error}")
             title = "社員証を読み取れませんでした"
             message = "もう一度かざしてください。続く場合は管理者に連絡してください。"
         elif isinstance(error, sqlite3.Error):
             log.exception("DB のエラー", exc_info=error)
+            events.add_event(self.database, events.ERROR, f"DB: {error}")
             title = "記録できませんでした"
             message = "扉は開けていません。続く場合は管理者に連絡してください。"
         else:
             log.exception("想定外のエラー", exc_info=error)
+            events.add_event(self.database, events.ERROR, f"想定外: {error!r}")
             title = "処理を中止しました"
             message = "扉は開けていません。続く場合は管理者に連絡してください。"
 

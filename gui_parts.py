@@ -1,7 +1,6 @@
 # 画面で使う部品(色、フォント、ボタンなど)と、全画面の土台 Screen
 #
 # 7インチ(800×480)のタッチモニターに合わせている。
-# 全画面にならずに上にタブやタイトルバーが出ても切れないよう、縦 416px でも収まるようにしている。
 #   ・ボタンは高さ 56px 以上(約 10mm。指で押しやすい大きさ)、ボタンどうしは 12px 以上あける
 #   ・文字は 16px 以上。背景との明るさの差(コントラスト比)は 4.5 以上
 #   ・押すボタンは青。赤はエラー、黄は警告、緑は完了だけに使う(安全色の意味とそろえる)
@@ -37,7 +36,7 @@ CIRCLED_NUMBERS = ["①", "②", "③", "④", "⑤"]
 
 # ---- 大きさ ----
 SCREEN_PADDING = 24
-FOOTER_HEIGHT = 72
+FOOTER_HEIGHT = 80
 BUTTON_HEIGHT = 56
 TEXT_WIDTH = 750   # 長い文はこの幅で折り返す
 
@@ -148,7 +147,8 @@ def make_line(parent, thickness=1, color=LINE_COLOR):
 # 「戻る」は左下、「次へ進む」ボタンは右下に、どの画面でも同じ場所に置く
 
 class Screen(customtkinter.CTkFrame):
-    idle_timeout = True   # 放っておいたらホームに戻すか
+    idle_timeout = True        # 放っておいたらホームに戻すか
+    door_may_be_open = False   # この画面の間は扉が開いていてもおかしくないか(不正な開放の検知で使う)
 
     def __init__(self, app):
         super().__init__(app.body, fg_color=WHITE, corner_radius=0)
@@ -166,14 +166,14 @@ class Screen(customtkinter.CTkFrame):
         self.footer_line.pack(side="bottom", fill="x")
 
         self.top_area = tkinter.Frame(self, bg=WHITE)
-        self.top_area.pack(fill="x", padx=SCREEN_PADDING, pady=(10, 0))
+        self.top_area.pack(fill="x", padx=SCREEN_PADDING, pady=(14, 0))
 
         self.content_area = customtkinter.CTkFrame(self, fg_color="transparent")
-        self.content_area.pack(fill="both", expand=True, padx=SCREEN_PADDING, pady=10)
+        self.content_area.pack(fill="both", expand=True, padx=SCREEN_PADDING, pady=12)
 
     def show_steps(self, names, current):
         # ① 社員証 → ② 貸出時間 → … を出して、今の手順を青の太字 + 下線にする
-        bar = tkinter.Frame(self.step_area, bg=WHITE, height=36)
+        bar = tkinter.Frame(self.step_area, bg=WHITE, height=40)
         bar.pack(fill="x")
         bar.pack_propagate(False)
 

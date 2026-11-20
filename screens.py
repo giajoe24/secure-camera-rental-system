@@ -13,8 +13,10 @@ import customtkinter
 
 import admin_screen
 import config
+import events
 import export
 import extend
+import long_rental
 import overdue_display
 import overdue_record
 from db import BORROW, RETURN, RentalError, parse_time
@@ -39,6 +41,7 @@ class HomeScreen(Screen):
 
     def __init__(self, app):
         super().__init__(app)
+        self.footer.pack_forget()   # 下の帯は、追加機能がボタンを置くときだけ出す(show_footer)
         rental = app.database.current_rental()
 
         # カメラの状態(札の色と文字の両方で出す)
@@ -85,7 +88,9 @@ class HomeScreen(Screen):
         else:
             disable_button(borrow_button)
 
-        admin_screen.add_button_on_home(self)
+        # 追加機能: 管理画面
+        if config.USE_ADMIN_SCREEN:
+            admin_screen.add_button_on_home(self)
 
         # 追加機能: 延長
         if config.USE_EXTEND and can_use_lock(app.lock):
@@ -165,6 +170,7 @@ class ScanScreen(Screen):
             user = self.app.database.find_user_by_card(card_id)
             if user is None:
                 log.info("未登録の社員証: %s", card_id)
+                events.add_event(self.app.database, events.UNKNOWN_CARD, f"カードID {card_id}")
                 raise RentalError("登録されていない社員証です", "利用の登録は管理者に頼んでください。")
 
             rental = self.app.database.current_rental()
@@ -204,14 +210,21 @@ class TimeScreen(Screen):
 
         grid = customtkinter.CTkFrame(self.content_area, fg_color="transparent")
         grid.pack(fill="x")
-        grid.grid_columnconfigure((0, 1, 2), weight=1, uniform="a")
+        grid.grid_columnconfigure((0, 1, 2, 3), weight=1, uniform="a")
 
         self.time_buttons = {}  # {分: ボタン}
         for i, minutes in enumerate(config.RENTAL_MINUTES):
             button = make_sub_button(grid, format_minutes(minutes), lambda m=minutes: self.select(m), height=60)
             button.configure(font=make_font(21))
-            button.grid(row=i // 3, column=i % 3, sticky="ew", padx=6, pady=6)
+            button.grid(row=i // 4, column=i % 4, sticky="ew", padx=6, pady=6)
             self.time_buttons[minutes] = button
+
+        # 追加機能: 日をまたぐ貸出(残りの場所に横長で置く)
+        if config.USE_LONG_RENTAL:
+            count = len(config.RENTAL_MINUTES)
+            other_button = make_sub_button(grid, "その他(日をまたぐ)", self.choose_long, height=60)
+            other_button.configure(font=make_font(19))
+            other_button.grid(row=count // 4, column=count % 4, columnspan=4 - count % 4, sticky="ew", padx=6, pady=6)
 
         # 返却予定は下の帯に出す(画面が狭くても必ず見えるように)
         self.due_label = self.add_footer_label()
@@ -233,6 +246,10 @@ class TimeScreen(Screen):
     def go_next(self):
         self.app.show(ConfirmScreen, user=self.user, minutes=self.selected_minutes)
 
+    def choose_long(self):
+        self.app.show(long_rental.LongTimeScreen, user=self.user, steps=BORROW_STEPS,
+                      back_screen=TimeScreen, next_screen=ConfirmScreen)
+
 
 def make_table(parent, rows, columns=1):
     # 「項目  値」の表。rows は [(項目, 値), ...]
@@ -251,26 +268,48 @@ def make_table(parent, rows, columns=1):
         make_line(table).grid(row=row * 2 + 1, column=column, columnspan=2, sticky="ew")
 
 
+def show_unlock_notice(parent, button_text):
+    # 押すとロックが開くことを、黄色(注意の色)の太字の枠で先に知らせる(急に開いて驚かないように)
+    box = tkinter.Frame(parent, bg=YELLOW_TAG[1], highlightthickness=2, highlightbackground=YELLOW_TAG[0])
+    box.pack(fill="x", pady=(8, 0))
+    make_tag(box, "  注意  ", (WHITE, YELLOW_TAG[0])).pack(side="left", padx=10, pady=8)
+    make_label(box, f"「{button_text}」を押すと、扉のロックが「カチッ」と開きます。", 19, True,
+               YELLOW_TAG[0]).pack(side="left", padx=(0, 10))
+
+
 class ConfirmScreen(Screen):
-    def __init__(self, app, user, minutes):
+    # minutes: 選んだ貸出時間(分)
+    # due_at : 日をまたぐ貸出(追加機能)のときは、選んだ返却予定そのもの(minutes は None)
+    def __init__(self, app, user, minutes=None, due_at=None):
         super().__init__(app)
         self.user = user
         self.minutes = minutes
+        self.fixed_due_at = due_at
         self.show_steps(BORROW_STEPS, 2)
-        self.show_title("この内容で借ります", "「借りる」を押すと、扉のロックが開きます。")
+        self.show_title("この内容で借ります")
+        show_unlock_notice(self.top_area, "借りる")
 
-        self.due_at = datetime.now() + timedelta(minutes=minutes)
+        if due_at is None:
+            length = format_minutes(minutes)
+            due_at = datetime.now() + timedelta(minutes=minutes)
+        else:
+            days = (due_at.date() - datetime.now().date()).days
+            length = f"{days} 日間(日をまたぐ)"
         make_table(self.content_area, [
             ("借りる人", f"{user['name']} さん"),
-            ("貸出時間", format_minutes(minutes)),
-            ("返却予定", format_date_time(self.due_at)),
+            ("貸出時間", length),
+            ("返却予定", format_date_time(due_at)),
         ])
 
         self.back_button = self.add_left_button("戻る", self.go_back)
         self.borrow_button = self.add_right_button("借りる", self.borrow)
 
     def go_back(self):
-        self.app.show(TimeScreen, user=self.user, selected_minutes=self.minutes)
+        if self.fixed_due_at is not None:
+            self.app.show(long_rental.LongTimeScreen, user=self.user, steps=BORROW_STEPS,
+                          back_screen=TimeScreen, next_screen=ConfirmScreen, due_at=self.fixed_due_at)
+        else:
+            self.app.show(TimeScreen, user=self.user, selected_minutes=self.minutes)
 
     def borrow(self):
         # 二度押し防止
@@ -278,15 +317,18 @@ class ConfirmScreen(Screen):
         self.back_button.configure(state="disabled")
         self.update_idletasks()
 
-        # 時間を選んでから押すまでの間も数えるため、返却予定は押した時刻から計算し直す
-        due_at = datetime.now() + timedelta(minutes=self.minutes)
+        if self.fixed_due_at is not None:
+            due_at = self.fixed_due_at
+        else:
+            # 時間を選んでから押すまでの間も数えるため、返却予定は押した時刻から計算し直す
+            due_at = datetime.now() + timedelta(minutes=self.minutes)
         try:
             self.app.database.start(BORROW, self.user, self.app.open_door, due_at=due_at)
         except Exception as e:
             self.app.show_error(e)
             return
 
-        log.info("貸出の解錠: %s %s分", self.user["employee_number"], self.minutes)
+        log.info("貸出の解錠: %s 返却予定 %s", self.user["employee_number"], due_at)
         self.app.show(DoorScreen, action=BORROW, user=self.user, due_at=due_at)
 
 
@@ -296,14 +338,15 @@ class ReturnConfirmScreen(Screen):
         super().__init__(app)
         self.user = user
         self.show_steps(RETURN_STEPS, 1)
-        self.show_title("カメラを返します", "「返す」を押すと、扉のロックが開きます。")
+        self.show_title(f"{config.ITEM_NAME}を返します")
+        show_unlock_notice(self.top_area, "返す")
 
         make_table(self.content_area, [
             ("返す人", f"{user['name']} さん"),
             ("借りた人", f"{rental['name']} さん"),
             ("貸出日時", format_date_time(parse_time(rental["rented_at"]))),
             ("返却予定", format_date_time(parse_time(rental["due_at"]))),
-        ], columns=2)
+        ])
 
         self.rental = rental
         self.back_button = self.add_left_button("戻る", app.go_home)
@@ -331,7 +374,8 @@ class DoorScreen(Screen):
     #   閉まったら                                         → 完了を記録
     # 状態はマイクロスイッチ(lock.is_locked)で 0.2 秒ごとに見る
 
-    idle_timeout = False   # 扉が開いている間はホームに戻さない
+    idle_timeout = False       # 扉が開いている間はホームに戻さない
+    door_may_be_open = True    # 自分で解錠しているので、不正な開放ではない
 
     def __init__(self, app, action, user, due_at=None, rental=None):
         # rental: 返却のとき、返すカメラの貸出(延滞の表示に使う)
@@ -344,19 +388,23 @@ class DoorScreen(Screen):
         self.start_time = time.monotonic()
         self.open_time = None
 
+        item = config.ITEM_NAME
         if action == BORROW:
             self.show_steps(BORROW_STEPS, 3)
-            self.what_to_do = "カメラを取り出して、扉を閉めてください。"
+            self.what_to_do = f"{item}を取り出して、扉を閉めてください。"
+            self.reminder = f"{item}は持ち歩かず、使い終わったらすぐに返してください。"
         else:
             self.show_steps(RETURN_STEPS, 2)
-            self.what_to_do = "カメラを戻して、扉を閉めてください。"
+            self.what_to_do = f"{item}を中に戻して、扉を閉めてください。"
+            self.reminder = f"{item}を持ったまま扉を閉めないよう、中に置いたか確かめてください。"
 
         self.footer.pack_forget()   # ここでは押すボタンがない
 
-        self.title_label = make_label(self.top_area, "扉のロックを開けました", 24, True)
+        self.title_label = make_label(self.top_area, "扉のロックが開きました", 30, True)
         self.title_label.pack(anchor="w")
         self.guide_label = make_label(self.top_area, "扉を開けてください。", 22, True)
         self.guide_label.pack(anchor="w", pady=(8, 0))
+        make_label(self.top_area, self.reminder, 18, True, BLUE_TAG[0]).pack(anchor="w", pady=(6, 0))
 
         self.note_label = make_label(self.content_area, "", color=SUB_TEXT_COLOR)
         self.note_label.pack(anchor="w")
@@ -395,6 +443,8 @@ class DoorScreen(Screen):
                 return
             if now - self.open_time > config.DOOR_CLOSE_WARN_SECONDS and not self.warning_area.winfo_ismapped():
                 log.warning("扉が閉まっていません")
+                events.add_event(self.app.database, events.LEFT_OPEN,
+                                 f"{self.action}のあと {config.DOOR_CLOSE_WARN_SECONDS} 秒 開いたまま({self.user['name']})")
                 self.warning_area.pack(fill="x", pady=(14, 0))
 
         self.run_later(200, self.watch_door)

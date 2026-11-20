@@ -1,5 +1,5 @@
 # 追加機能: 返却予定の延長(config.USE_EXTEND)
-# 貸出中はホームに「延長する」を出す。借りた本人の社員証で延ばせる。
+# 貸出中はホームに「延長する」を出す。登録している人なら、借りた本人でなくても延ばせる。
 # 期限を過ぎてから延ばすときは「今」から延ばす。
 # 延長も記録は書き換えず、「延長」の行を足す(新しい返却予定はその行に入る)
 
@@ -21,6 +21,7 @@ STEPS = ["社員証", "延長時間", "完了"]
 def add_button_on_home(home, rental):
     if rental is None:
         return
+    home.show_footer()
     # ホームでは「カメラを返す」が主なので、延長は白いボタンにして目立たせすぎない
     button = make_sub_button(home.footer, "延長する", lambda: home.app.scan_card(STEPS, card_read))
     button.pack(side="right", padx=SCREEN_PADDING)
@@ -35,9 +36,6 @@ def card_read(app, card_id):
     rental = app.database.current_rental()
     if rental is None:
         raise RentalError("延長できません", "いまは貸し出されていません。")
-    if rental["user_id"] != user["id"]:
-        raise RentalError("延長できません", "延長は借りた本人の社員証でしてください。")
-
     app.show(ExtendScreen, user=user, rental=rental)
 
 
@@ -69,7 +67,8 @@ class ExtendScreen(Screen):
 
         self.show_steps(STEPS, 1)
         due_text = format_date_time(parse_time(rental["due_at"]))
-        self.show_title("どれだけ延ばしますか?", f"{user['name']} さん  (今の返却予定 {due_text})")
+        self.show_title("どれだけ延ばしますか?",
+                        f"借りた人 {rental['name']} さん / 延ばす人 {user['name']} さん / 今の返却予定 {due_text}")
 
         self.add_left_button("戻る", app.go_home)
         self.ok_button = self.add_right_button("OK", self.extend)

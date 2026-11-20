@@ -7,7 +7,12 @@ DB_PATH = BASE_DIR / "data" / "camera_rental.sqlite3"
 LOG_PATH = BASE_DIR / "logs" / "camera_rental.log"
 EXPORT_DIR = BASE_DIR / "exports"   # Excel の保存先
 
+# ---- 動かし方 ----
+MUST_ONLY = False       # True にすると追加機能を全部止めて、MUST だけの動きになる
+USE_HARDWARE = True     # False にすると PC で試せる(社員証と扉はテスト用ウィンドウのボタンで代わりにする)
+
 CAMERA_NAME = "セキュアカメラ"
+ITEM_NAME = "カメラ"    # 箱から取り出すもの。画面の「○○を取り出して」に使う
 
 # 貸出時間の選択肢(分)
 RENTAL_MINUTES = [15, 30, 60, 120, 240, 480]
@@ -48,6 +53,10 @@ LOG_FILE_COUNT = 5
 USE_OVERDUE_DISPLAY = True   # 期限切れをホームに控えめに出す(overdue_display.py)
 USE_OVERDUE_RECORD = True    # 何分遅れて返したかを出す(overdue_record.py)
 
+USE_LONG_RENTAL = True       # 日をまたぐ貸出(出張など)(long_rental.py)
+LONG_RENTAL_MAX_DAYS = 31    # 何日先まで借りられるか
+LONG_RENTAL_DEFAULT_HOUR = 17  # はじめに出しておく返却時刻(明日の○時)
+
 USE_EXTEND = True            # 返却予定の延長(extend.py)
 EXTEND_MINUTES = [15, 30, 60, 120]
 
@@ -55,4 +64,20 @@ USE_BACKUP = True            # DB を1日1回バックアップ(backup.py)
 BACKUP_DIR = BASE_DIR / "backups"
 BACKUP_KEEP_DAYS = 31        # 記録は最低1か月残す決まりなので、それより長く
 
-# 管理画面の「利用者の一覧」「貸出の履歴」、管理者の追加・削除、CSV 保存は admin_screen.py にある
+USE_ADMIN_SCREEN = True      # 管理画面(admin_screen.py)。OFF なら登録は register.py で
+USE_EVENTS = True            # できごとの記録(events.py):未登録カード、不正な開放、閉め忘れ、エラー
+USE_FORCED_OPEN_CHECK = True # 解錠していないのに扉が開いたら警告する(forced_open.py)
+
+# ---- フラグの組み合わせ(ここは触らなくてよい) ----
+if MUST_ONLY:
+    USE_OVERDUE_DISPLAY = False
+    USE_OVERDUE_RECORD = False
+    USE_EXTEND = False
+    USE_LONG_RENTAL = False
+    USE_BACKUP = False
+    USE_ADMIN_SCREEN = False
+    USE_EVENTS = False
+    USE_FORCED_OPEN_CHECK = False
+
+if not USE_HARDWARE:
+    FULLSCREEN = False   # PC ではウィンドウで出す
