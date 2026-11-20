@@ -106,14 +106,23 @@ def new_card_read(app, card_id):
     app.show(RegisterScreen, card_id=normalize_card_id(card_id))
 
 
+def back_to_menu(app):
+    app.show(AdminMenuScreen)
+
+
+def scan_new_card(app):
+    # 利用者の登録:「戻る」・時間切れ・エラーでも、管理メニューに戻る(ホームまで戻らない)
+    app.scan_card(REGISTER_STEPS, new_card_read, back=lambda: back_to_menu(app), back_name="メニュー")
+
+
 # ---- 画面 ----
 
 class AdminMenuScreen(Screen):
     def __init__(self, app):
         super().__init__(app)
         self.show_steps(ADMIN_STEPS, 1)
-        self.show_title("管理メニュー", "使い終わったら「終わる」を押してください。")
-        self.add_left_button("終わる", app.go_home)
+        self.show_title("管理メニュー", "使い終わったら「管理を終わる」を押してください。")
+        self.add_left_button("管理を終わる", app.go_home)
 
         buttons = customtkinter.CTkFrame(self.content_area, fg_color="transparent")
         buttons.pack(fill="both", expand=True)
@@ -121,7 +130,7 @@ class AdminMenuScreen(Screen):
         buttons.grid_rowconfigure((0, 1), weight=1, uniform="b")
 
         menu = [
-            ("利用者の登録", lambda: app.scan_card(REGISTER_STEPS, new_card_read)),
+            ("利用者の登録", lambda: scan_new_card(app)),
             ("利用者の一覧", lambda: app.show(UserListScreen)),
             ("貸出の履歴", lambda: app.show(HistoryScreen)),
         ]
@@ -146,12 +155,12 @@ class RegisterScreen(Screen):
             self.show_steps(FIRST_ADMIN_STEPS, 1)
             title = "最初の管理者を登録します"
             self.note = f"社員番号と氏名を入れてください。(カードID {card_id})"
-            self.add_left_button("戻る", app.go_home)
+            self.add_left_button("◀ ホーム", app.go_home)
         else:
             self.show_steps(REGISTER_STEPS, 1)
             title = "社員番号と氏名を入れてください"
             self.note = f"カードID {card_id}"
-            self.add_left_button("戻る", lambda: app.show(AdminMenuScreen))
+            self.add_left_button("◀ メニュー", lambda: back_to_menu(app))
         self.add_right_button("登録する", self.register)
 
         # 見出しの下の文は、入力にまちがいがあったらエラーの文に変える(画面の高さを変えないため)
@@ -222,8 +231,8 @@ class RegisterDoneScreen(Screen):
         make_tag(self.top_area, "  登録しました  ", GREEN_TAG).pack(anchor="w", pady=(0, 10))
         make_label(self.top_area, f"{name} さんを登録しました。", 26, True).pack(anchor="w")
         make_label(self.top_area, "この社員証でカメラを借りられます。", 20).pack(anchor="w", pady=(6, 0))
-        self.add_left_button("メニュー", lambda: app.show(AdminMenuScreen))
-        self.add_right_button("続けて登録", lambda: app.scan_card(REGISTER_STEPS, new_card_read))
+        self.add_left_button("◀ メニュー", lambda: back_to_menu(app))
+        self.add_right_button("続けて登録", lambda: scan_new_card(app))
 
 
 # ---- 一覧の表 ----
@@ -270,7 +279,7 @@ class UserListScreen(Screen):
                 users.append(user)
 
         self.show_title(f"利用者の一覧({len(users)} 人)")
-        self.add_left_button("メニュー", lambda: app.show(AdminMenuScreen))
+        self.add_left_button("◀ メニュー", lambda: back_to_menu(app))
 
         table = make_table(self.content_area, ["社員番号", "氏名", "", ""], [110, 0, 180, 120])
         for i, user in enumerate(users):
@@ -298,7 +307,8 @@ class UserListScreen(Screen):
                 set_admin(self.app.database, user, True)
                 log.info("管理者にした: %s", user["employee_number"])
         except Exception as e:
-            self.app.show_error(e, retry=lambda: self.app.show(UserListScreen), retry_text="一覧に戻る")
+            self.app.show_error(e, retry=lambda: self.app.show(UserListScreen), retry_text="一覧に戻る",
+                                back=lambda: back_to_menu(self.app), back_text="メニューに戻る")
             return
         self.app.show(UserListScreen)
 
@@ -311,7 +321,8 @@ class UserListScreen(Screen):
         try:
             delete_user(self.app.database, user)
         except Exception as e:
-            self.app.show_error(e, retry=lambda: self.app.show(UserListScreen), retry_text="一覧に戻る")
+            self.app.show_error(e, retry=lambda: self.app.show(UserListScreen), retry_text="一覧に戻る",
+                                back=lambda: back_to_menu(self.app), back_text="メニューに戻る")
             return
         log.info("利用者を消した: %s", user["employee_number"])
         self.app.show(UserListScreen)
@@ -322,7 +333,7 @@ class HistoryScreen(Screen):
         super().__init__(app)
         self.show_steps(ADMIN_STEPS, 1)
         self.show_title("貸出の履歴(新しい 30 件)")
-        self.add_left_button("メニュー", lambda: app.show(AdminMenuScreen))
+        self.add_left_button("◀ メニュー", lambda: back_to_menu(app))
         self.save_button = self.add_right_button("ファイルに保存", self.save_files)
 
         headers = ["貸出日時", "借りた人", "返した人", "返却日時"]
@@ -359,7 +370,7 @@ class HistoryScreen(Screen):
             excel_path = export.export_to_excel(self.app.database, config.EXPORT_DIR)
             csv_path = export.export_to_csv(self.app.database, config.EXPORT_DIR)
         except Exception as e:
-            self.app.show_error(e)
+            self.app.show_error(e, back=lambda: self.app.show(HistoryScreen), back_text="履歴に戻る")
             return
         log.info("履歴を保存: %s / %s", excel_path.name, csv_path.name)
         disable_button(self.save_button)
@@ -374,7 +385,7 @@ class EventsScreen(Screen):
         super().__init__(app)
         self.show_steps(ADMIN_STEPS, 1)
         self.show_title("できごとの記録(新しい 30 件)")
-        self.add_left_button("メニュー", lambda: app.show(AdminMenuScreen))
+        self.add_left_button("◀ メニュー", lambda: back_to_menu(app))
 
         table = make_table(self.content_area, ["日時", "種類", "内容"], [140, 130, 0])
         rows = events.list_events(app.database)[:30]

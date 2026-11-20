@@ -110,12 +110,15 @@ class ScanScreen(Screen):
 
     idle_timeout = False  # 読み取りの待ち時間で戻るので、こちらでは戻さない
 
-    def __init__(self, app, purpose=BORROW, steps=None, on_card=None):
+    def __init__(self, app, purpose=BORROW, steps=None, on_card=None, back=None, back_name="ホーム"):
         # on_card: 管理画面用。指定されていたら、貸出・返却の代わりにこれを呼ぶ
+        # back / back_name: 「戻る」・時間切れ・エラーのときの戻り先(なければホーム)
         super().__init__(app)
         self.purpose = purpose
         self.steps = steps
         self.on_card = on_card
+        self.back = back or app.go_home
+        self.back_name = back_name
 
         if steps is None:
             if purpose == BORROW:
@@ -128,7 +131,7 @@ class ScanScreen(Screen):
         self.remaining_label = make_label(self.content_area, "", color=SUB_TEXT_COLOR)
         self.remaining_label.pack(anchor="w")
 
-        self.add_left_button("戻る", app.go_home)
+        self.add_left_button("戻る" if back is None else f"◀ {back_name}", self.back)
 
         self.cancel_event = threading.Event()  # 「戻る」を読み取り側に伝える
         self.start_time = time.monotonic()
@@ -141,7 +144,7 @@ class ScanScreen(Screen):
     def check_result(self):
         if not self.future.done():
             remaining = max(0, int(config.CARD_WAIT_SECONDS - (time.monotonic() - self.start_time)))
-            text = f"あと {remaining} 秒でホームに戻ります"
+            text = f"あと {remaining} 秒で{self.back_name}に戻ります"
             if self.remaining_label.cget("text") != text:   # 変わったときだけ書き換える
                 self.remaining_label.configure(text=text)
             self.run_later(100, self.check_result)
@@ -150,16 +153,22 @@ class ScanScreen(Screen):
         try:
             card_id = self.future.result()
         except Exception as e:
-            self.app.show_error(e, retry=self.scan_again, retry_text="もう一度かざす")
+            self.show_error(e)
             return
 
         if card_id is None:
-            self.app.go_home()  # 時間切れ
+            self.back()  # 時間切れ
         else:
             self.use_card(card_id)
 
     def scan_again(self):
-        self.app.show(ScanScreen, purpose=self.purpose, steps=self.steps, on_card=self.on_card)
+        self.app.show(ScanScreen, purpose=self.purpose, steps=self.steps, on_card=self.on_card,
+                      back=self.back if self.back != self.app.go_home else None, back_name=self.back_name)
+
+    def show_error(self, error):
+        # エラー画面の左のボタンも、この画面の戻り先にする
+        self.app.show_error(error, retry=self.scan_again, retry_text="もう一度かざす",
+                            back=self.back, back_text=f"{self.back_name}に戻る")
 
     def use_card(self, card_id):
         try:
@@ -184,9 +193,9 @@ class ScanScreen(Screen):
                 self.app.show(ReturnConfirmScreen, user=user, rental=rental)
 
         except RentalError as e:
-            self.app.show_error(e, retry=self.scan_again, retry_text="もう一度かざす")
+            self.show_error(e)
         except Exception as e:
-            self.app.show_error(e)
+            self.app.show_error(e, back=self.back, back_text=f"{self.back_name}に戻る")
 
     def leave(self):
         self.future.cancel()      # まだ始まっていなければ取り消し
@@ -497,10 +506,11 @@ class DoneScreen(Screen):
 
 class MessageScreen(Screen):
     # エラーや取り消しのお知らせ
-    def __init__(self, app, title, message, retry=None, retry_text="もう一度", tag="エラー"):
+    def __init__(self, app, title, message, retry=None, retry_text="もう一度", tag="エラー",
+                 back=None, back_text="ホームに戻る"):
         super().__init__(app)
         make_tag(self.top_area, f"  {tag}  ", RED_TAG).pack(anchor="w", pady=(0, 10))
         self.show_title(title, message, ERROR_TEXT_COLOR)
-        self.add_left_button("ホームに戻る", app.go_home)
+        self.add_left_button(back_text, back or app.go_home)
         if retry is not None:
             self.add_right_button(retry_text, retry)

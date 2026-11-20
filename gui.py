@@ -107,9 +107,10 @@ class App(customtkinter.CTk):
     def go_home(self):
         self.show(HomeScreen)
 
-    def scan_card(self, steps, on_card):
+    def scan_card(self, steps, on_card, back=None, back_name="ホーム"):
         # 管理画面などで使う。社員証を読んで、読めたら on_card(app, カードID) を呼ぶ
-        self.show(ScanScreen, steps=steps, on_card=on_card)
+        # back: 「戻る」・時間切れ・エラーのときの戻り先(なければホーム)
+        self.show(ScanScreen, steps=steps, on_card=on_card, back=back, back_name=back_name)
 
     def unlock(self):
         self.lock.open()
@@ -121,7 +122,7 @@ class App(customtkinter.CTk):
         self.card_reader_worker.shutdown(wait=False, cancel_futures=True)
         self.destroy()
 
-    def show_error(self, error, retry=None, retry_text="もう一度"):
+    def show_error(self, error, retry=None, retry_text="もう一度", back=None, back_text="ホームに戻る"):
         # エラーの種類ごとに、利用者向けの文に直して出す
         if isinstance(error, RentalError):
             title = error.title
@@ -147,7 +148,8 @@ class App(customtkinter.CTk):
             title = "処理を中止しました"
             message = "扉は開けていません。続く場合は管理者に連絡してください。"
 
-        self.show(MessageScreen, title=title, message=message, retry=retry, retry_text=retry_text)
+        self.show(MessageScreen, title=title, message=message, retry=retry, retry_text=retry_text,
+                  back=back, back_text=back_text)
 
     def report_callback_exception(self, exc_type, exc, tb):
         # ボタンの処理などで起きたエラーもエラー画面にする(tkinter が呼ぶ)
