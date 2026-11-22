@@ -8,6 +8,7 @@
 import threading
 
 import config
+import user_info
 from card_reader import CardReaderError, NfcCardReader
 from db import EMPLOYEE_NUMBER_DIGITS, Database, RentalError, check_employee_number
 
@@ -47,12 +48,17 @@ def register_one(database, card_reader):
 
     employee_number = ask_employee_number()
     name = ask("氏名: ")
+    department = ""
+    if config.USE_USER_INFO:
+        department = input("部署(なければそのまま Enter): ").strip()
     if input(f"{employee_number} {name} さんを登録します。よければ y: ").strip() != "y":
         print("登録しませんでした")
         return
 
     try:
         database.add_user(employee_number, name, card_id)
+        if department != "":
+            user_info.set_department(database, database.find_user_by_card(card_id), department)
         print("登録しました")
     except RentalError as e:
         print(f"{e.title}: {e.message}")
@@ -61,6 +67,8 @@ def register_one(database, card_reader):
 def main():
     database = Database(config.DB_PATH)
     database.create_tables()
+    if config.USE_USER_INFO:
+        user_info.add_columns(database)
     card_reader = NfcCardReader(config.CARD_READER_PATH, config.CARD_TARGETS)
 
     print("登録されている人:", len(database.list_users()), "人")

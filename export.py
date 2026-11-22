@@ -122,6 +122,8 @@ def export_to_excel(database, output_dir, file_name=None):
             event_rows.append([event["id"], to_time(event["time"]), event["kind"], event["detail"]])
         add_sheet(book, "できごと", ["番号", "日時", "種類", "内容"], [8, 18, 14, 60], event_rows)
 
+    add_users_sheet(book, database)
+
     if file_name is None:
         file_name = now.strftime("rental_log_%Y%m%d_%H%M%S.xlsx")
     output_dir.mkdir(exist_ok=True)
@@ -140,6 +142,39 @@ def update_excel(database):
         export_to_excel(database, config.EXPORT_DIR, "rental_log.xlsx")
     except Exception:
         log.exception("Excel の記録を更新できませんでした")
+
+
+def add_users_sheet(book, database):
+    # 利用者の一覧(消した人は出さない)
+    users = database.select_all("""
+        SELECT users.*, admins.user_id IS NOT NULL AS is_admin
+        FROM users LEFT JOIN admins ON admins.user_id = users.id
+        WHERE users.card_id NOT LIKE 'DELETED-%'
+        ORDER BY users.employee_number
+    """)
+    headers = ["社員番号", "氏名"]
+    widths = [12, 18]
+    if config.USE_USER_INFO:
+        headers += ["部署", "状態"]
+        widths += [18, 10]
+    headers.append("管理者")
+    widths.append(8)
+
+    rows = []
+    for user in users:
+        row = [user["employee_number"], user["name"]]
+        if config.USE_USER_INFO:
+            if user["active"] == 1:
+                state = "利用中"
+            else:
+                state = "停止中"
+            row += [user["department"], state]
+        if user["is_admin"]:
+            row.append("○")
+        else:
+            row.append("")
+        rows.append(row)
+    add_sheet(book, "利用者", headers, widths, rows)
 
 
 def export_to_csv(database, output_dir):

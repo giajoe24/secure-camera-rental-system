@@ -17,6 +17,8 @@ import events
 import export
 import extend
 import long_rental
+import storage_check
+import user_info
 import overdue_display
 import overdue_record
 from db import BORROW, RETURN, RentalError, parse_time
@@ -62,6 +64,11 @@ class HomeScreen(Screen):
         # 追加機能: 期限切れの表示
         if config.USE_OVERDUE_DISPLAY:
             overdue_display.show_on_home(self, rental)
+
+        # 追加機能: SD カードの空きが少ないとき
+        if config.USE_STORAGE_CHECK and storage_check.low_space:
+            text = "SD カードの空きが少なくなっています。管理者に連絡してください。"
+            make_label(self.top_area, text, 16, True, ERROR_TEXT_COLOR).pack(anchor="w", pady=(4, 0))
 
         # 大きいボタン2つ
         buttons = customtkinter.CTkFrame(self.content_area, fg_color="transparent")
@@ -181,6 +188,10 @@ class ScanScreen(Screen):
                 log.info("未登録の社員証: %s", card_id)
                 events.add_event(self.app.database, events.UNKNOWN_CARD, f"カードID {card_id}")
                 raise RentalError("登録されていない社員証です", "利用の登録は管理者に頼んでください。")
+
+            # 追加機能: 利用停止中の社員証は使えない
+            if config.USE_USER_INFO:
+                user_info.check_active(user)
 
             rental = self.app.database.current_rental()
             if self.purpose == BORROW:

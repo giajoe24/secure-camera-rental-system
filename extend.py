@@ -9,6 +9,7 @@ import customtkinter
 
 import config
 import export
+import user_info
 from db import DONE, RentalError, parse_time
 from gui_parts import (GREEN_TAG, SCREEN_PADDING, SUB_TEXT_COLOR, TEXT_COLOR, Screen, disable_button, enable_main_button,
                        format_date_time, format_minutes, make_font, make_label, make_sub_button, make_tag,
@@ -32,6 +33,8 @@ def card_read(app, card_id):
     user = app.database.find_user_by_card(card_id)
     if user is None:
         raise RentalError("登録されていない社員証です", "利用の登録は管理者に頼んでください。")
+    if config.USE_USER_INFO:
+        user_info.check_active(user)
 
     rental = app.database.current_rental()
     if rental is None:

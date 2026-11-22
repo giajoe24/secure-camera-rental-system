@@ -98,4 +98,11 @@
   extend.py            延長(記録は「延長」の行を足す)
   backup.py            DB のバックアップ
   admin_screen.py      管理画面(admins テーブルを使う)
+  long_rental.py       日をまたぐ貸出(出張)
+  events.py            できごとの記録(未登録カード、不正な開放、閉め忘れ、エラー、期限切れ、容量不足)
+  forced_open.py       解錠していないのに扉が開いたら警告
+  user_info.py         部署と、利用停止・再開(users に列を足す)
+  storage_check.py     SD カードの空き、古いファイルの削除、DB の点検
+  pc_test.py           PC で試すときの代わりの機器(USE_HARDWARE = False)
   どれも screens.py などから「if config.USE_〜:」の 1 行で呼ばれる。False にすれば MUST だけの動きになる。
+  MUST_ONLY = True にすると、全部まとめて OFF になる。

@@ -71,6 +71,12 @@ USE_ADMIN_SCREEN = True      # 管理画面(admin_screen.py)。OFF なら登録�
 USE_EVENTS = True            # できごとの記録(events.py):未登録カード、不正な開放、閉め忘れ、エラー
 USE_FORCED_OPEN_CHECK = True # 解錠していないのに扉が開いたら警告する(forced_open.py)
 
+USE_USER_INFO = True         # 利用者の部署と、利用停止・再開(user_info.py)
+
+USE_STORAGE_CHECK = True     # 容量と DB の見張り(storage_check.py)
+LOW_SPACE_MB = 500           # SD カードの空きがこれより少なくなったら警告
+EXPORT_KEEP_DAYS = 31        # exports/ の日時入りファイルを何日残すか
+
 # ---- フラグの組み合わせ(ここは触らなくてよい) ----
 if MUST_ONLY:
     USE_OVERDUE_DISPLAY = False
@@ -81,6 +87,8 @@ if MUST_ONLY:
     USE_ADMIN_SCREEN = False
     USE_EVENTS = False
     USE_FORCED_OPEN_CHECK = False
+    USE_STORAGE_CHECK = False
+    USE_USER_INFO = False
 
 if not USE_HARDWARE:
     FULLSCREEN = False   # PC ではウィンドウで出す

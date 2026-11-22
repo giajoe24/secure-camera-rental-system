@@ -15,6 +15,8 @@ digraph dbflow {
     w_extend [label="延長の「OK」\n(extend.py)"];
     w_admin  [label="管理画面\n一覧・管理者にする/やめる\n利用者を消す"];
     w_backup [label="起動時と1時間ごと\n(backup.py)"];
+    w_event  [label="未登録カード・不正な開放・閉め忘れ\nエラー・期限切れ(1分ごと)・容量不足"];
+    w_stop   [label="管理画面の「停止 / 再開」\n登録画面の部署"];
 
     f_cancel  [label="cancel\n「取り消し」を追加", fillcolor="#FCE8EC", color="#A8001F"];
     f_finish  [label="finish\n「完了」を追加", fillcolor="#E3F3EA", color="#0F6B3E"];
@@ -25,21 +27,24 @@ digraph dbflow {
     f_add     [label="add_user"];
     f_extend  [label="extend_rental\n「延長」を追加\n(新しい返却予定を入れる)", fillcolor="#E8EEF9", color="#1E4FA3"];
     f_admin   [label="set_admin / delete_user\n(admin_screen.py)"];
+    f_event   [label="add_event / check_overdue\n(events.py)"];
+    f_stop    [label="set_active / set_department\n(user_info.py)"];
     f_backup  [label="make_backup\nDB を丸ごとコピー\n31日より古いものは消す"];
 
     logs  [shape=plain, label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#E8EEF9" COLOR="#1E4FA3"><TR><TD BGCOLOR="#1E4FA3"><FONT COLOR="white"><B>logs(操作の記録)</B><BR/><FONT POINT-SIZE="10">追加するだけ・上書きしない</FONT></FONT></TD></TR><TR><TD ALIGN="LEFT">id</TD></TR><TR><TD ALIGN="LEFT">time(日時)</TD></TR><TR><TD ALIGN="LEFT">action(貸出 / 返却)</TD></TR><TR><TD ALIGN="LEFT">step(解錠 / 完了 / 取り消し)</TD></TR><TR><TD ALIGN="LEFT">user_id(操作した人)</TD></TR><TR><TD ALIGN="LEFT">due_at(返却予定)</TD></TR><TR><TD ALIGN="LEFT">note(メモ)</TD></TR></TABLE>>];
     admins [shape=plain, label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#E8EEF9" COLOR="#1E4FA3"><TR><TD BGCOLOR="#1E4FA3"><FONT COLOR="white"><B>admins(管理者)</B></FONT></TD></TR><TR><TD ALIGN="LEFT">user_id</TD></TR></TABLE>>];
     backups [label="backups/\ncamera_rental_日付.sqlite3", fillcolor="#F2F4F6"];
-    users [shape=plain, label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#E8EEF9" COLOR="#1E4FA3"><TR><TD BGCOLOR="#1E4FA3"><FONT COLOR="white"><B>users(利用者)</B></FONT></TD></TR><TR><TD ALIGN="LEFT">id</TD></TR><TR><TD ALIGN="LEFT">employee_number(社員番号)</TD></TR><TR><TD ALIGN="LEFT">name(氏名)</TD></TR><TR><TD ALIGN="LEFT">card_id(カードID)</TD></TR></TABLE>>];
+    users [shape=plain, label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#E8EEF9" COLOR="#1E4FA3"><TR><TD BGCOLOR="#1E4FA3"><FONT COLOR="white"><B>users(利用者)</B></FONT></TD></TR><TR><TD ALIGN="LEFT">id</TD></TR><TR><TD ALIGN="LEFT">employee_number(社員番号)</TD></TR><TR><TD ALIGN="LEFT">name(氏名)</TD></TR><TR><TD ALIGN="LEFT">card_id(カードID)</TD></TR><TR><TD ALIGN="LEFT">department(部署)</TD></TR><TR><TD ALIGN="LEFT">active(1 使える / 0 停止中)</TD></TR></TABLE>>];
+    events [shape=plain, label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#E8EEF9" COLOR="#1E4FA3"><TR><TD BGCOLOR="#1E4FA3"><FONT COLOR="white"><B>events(できごと)</B><BR/><FONT POINT-SIZE="10">追加するだけ</FONT></FONT></TD></TR><TR><TD ALIGN="LEFT">time(日時)</TD></TR><TR><TD ALIGN="LEFT">kind(種類)</TD></TR><TR><TD ALIGN="LEFT">detail(内容)</TD></TR></TABLE>>];
 
   // 列の見出し
   h1 [label="いつ", shape=plaintext, fontsize=14, style=""];
   h2 [label="関数", shape=plaintext, fontsize=14, style=""];
   h3 [label="DB(data/camera_rental.sqlite3)", shape=plaintext, fontsize=14, style=""];
   h1 -> h2 -> h3 [style=invis];
-  {rank=same; h1; w_noopen; w_close; w_press; w_extend; w_boot; w_home; w_scan; w_reg; w_admin; w_backup;}
-  {rank=same; h2; f_cancel; f_finish; f_start; f_extend; f_unfin; f_current; f_find; f_add; f_admin; f_backup;}
-  {rank=same; h3; logs; users; admins; backups;}
+  {rank=same; h1; w_noopen; w_close; w_press; w_extend; w_boot; w_home; w_scan; w_reg; w_admin; w_stop; w_event; w_backup;}
+  {rank=same; h2; f_cancel; f_finish; f_start; f_extend; f_unfin; f_current; f_find; f_add; f_admin; f_stop; f_event; f_backup;}
+  {rank=same; h3; logs; users; admins; events; backups;}
 
   f_export [label="export.py\nlist_rentals / list_logs で\n貸出と返却を組にする"];
   excel    [label="exports/rental_log.xlsx\n(貸出一覧 / 操作の記録)", fillcolor="#F2F4F6"];
@@ -55,6 +60,8 @@ digraph dbflow {
   w_extend -> f_extend;
   w_admin  -> f_admin;
   w_backup -> f_backup;
+  w_event  -> f_event;
+  w_stop   -> f_stop;
 
   // 関数 → テーブル(太い線 = 書く、細い点線 = 読む)
   f_cancel  -> logs  [label="追加", penwidth=2];
@@ -68,6 +75,8 @@ digraph dbflow {
   f_admin   -> admins [label="追加・削除", penwidth=2];
   f_admin   -> users  [label="カードを\n使えなくする", penwidth=2];
   f_backup  -> backups [label="コピー", penwidth=2];
+  f_event   -> events [label="追加", penwidth=2];
+  f_stop    -> users [label="書き換え", penwidth=2];
   admins -> users [label="user_id", style=dotted, arrowhead=none, constraint=false];
   logs -> users [label="user_id で\nつながる", style=dotted, arrowhead=none, constraint=false];
 

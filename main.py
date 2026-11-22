@@ -11,6 +11,8 @@ import config
 import events
 import export
 import pc_test
+import storage_check
+import user_info
 from card_reader import NfcCardReader
 from db import Database
 from gui import App
@@ -44,6 +46,8 @@ def main():
     database.create_tables()
     admin_screen.create_admin_table(database)
     events.create_events_table(database)
+    if config.USE_USER_INFO:
+        user_info.add_columns(database)
 
     # 前回、解錠したまま止まっていたら取り消しにしておく
     unfinished = database.close_unfinished()
@@ -68,6 +72,14 @@ def main():
     # 追加機能: DB のバックアップ
     if config.USE_BACKUP:
         backup.start_daily_backup(app)
+
+    # 追加機能: 期限切れをできごとに記録(1 分ごと)
+    if config.USE_EVENTS:
+        events.start_overdue_check(app)
+
+    # 追加機能: 容量と DB の見張り(1 時間ごと)
+    if config.USE_STORAGE_CHECK:
+        storage_check.start_watch(app)
 
     try:
         app.mainloop()

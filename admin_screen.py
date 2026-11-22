@@ -6,6 +6,7 @@
 # 管理者がまだ1人もいないときは、「管理者」から最初の管理者を登録する(初期設定)
 
 import logging
+from datetime import datetime, timedelta
 
 import customtkinter
 
@@ -13,10 +14,11 @@ import config
 import events
 import export
 import overdue_record
+import user_info
 from db import RentalError, normalize_card_id, parse_time
 from gui_parts import (BLUE, BLUE_TAG, BORDER_COLOR, ERROR_TEXT_COLOR, GREEN_TAG, RED_TAG, SUB_TEXT_COLOR,
                        TEXT_COLOR, WHITE, YELLOW_TAG, Screen, disable_button, format_date_time, make_font, make_label,
-                       make_line, make_sub_button, make_tag)
+                       make_line, make_sub_button, make_tag, show_as_selected)
 
 log = logging.getLogger(__name__)
 
@@ -170,23 +172,30 @@ class RegisterScreen(Screen):
 
         form = customtkinter.CTkFrame(self.content_area, fg_color="transparent")
         form.pack(fill="x")
-        form.grid_columnconfigure(0, minsize=120)
-        form.grid_columnconfigure(1, weight=1)
+        form.grid_columnconfigure(0, minsize=100)
+        form.grid_columnconfigure((1, 3), weight=1, uniform="entry")
 
         make_label(form, "社員番号", color=SUB_TEXT_COLOR).grid(row=0, column=0, sticky="w", pady=6)
         self.number_entry = self.make_entry(form, "7 桁の数字(例: 1234567)")
         self.number_entry.grid(row=0, column=1, sticky="ew", pady=6)
 
+        # 追加機能: 部署(社員番号の右に置いて、画面の高さを増やさない)
+        self.department_entry = None
+        if config.USE_USER_INFO:
+            make_label(form, "部署", color=SUB_TEXT_COLOR).grid(row=0, column=2, sticky="w", padx=(16, 8), pady=6)
+            self.department_entry = self.make_entry(form, "例: 総務部(なくてもよい)")
+            self.department_entry.grid(row=0, column=3, sticky="ew", pady=6)
+
         make_label(form, "氏名", color=SUB_TEXT_COLOR).grid(row=1, column=0, sticky="w", pady=6)
         self.name_entry = self.make_entry(form, "例: 山田 太郎(「半角/全角」キーで日本語)")
-        self.name_entry.grid(row=1, column=1, sticky="ew", pady=6)
+        self.name_entry.grid(row=1, column=1, columnspan=3, sticky="ew", pady=6)
 
         # 管理者にするか(初期設定のときは必ず管理者なので出さない)
         self.admin_checkbox = customtkinter.CTkCheckBox(form, text="管理者にする", font=make_font(18),
                                                         text_color=TEXT_COLOR, fg_color=BLUE, hover=False,
                                                         checkbox_width=32, checkbox_height=32)
         if not first_admin:
-            self.admin_checkbox.grid(row=2, column=1, sticky="w", pady=6)
+            self.admin_checkbox.grid(row=2, column=1, columnspan=3, sticky="w", pady=6)
 
         self.number_entry.focus_set()
 
@@ -213,9 +222,15 @@ class RegisterScreen(Screen):
             self.show_error_text(e.message)
             return
         log.info("利用者を登録: %s", number)
+        new_user = self.app.database.find_user_by_card(self.card_id)
+
+        if self.department_entry is not None:
+            department = self.department_entry.get().strip()
+            if department != "":
+                user_info.set_department(self.app.database, new_user, department)
 
         if self.first_admin or self.admin_checkbox.get() == 1:
-            set_admin(self.app.database, self.app.database.find_user_by_card(self.card_id), True)
+            set_admin(self.app.database, new_user, True)
             log.info("管理者にした: %s", number)
 
         if self.first_admin:
@@ -281,20 +296,47 @@ class UserListScreen(Screen):
         self.show_title(f"利用者の一覧({len(users)} 人)")
         self.add_left_button("◀ メニュー", lambda: back_to_menu(app))
 
-        table = make_table(self.content_area, ["社員番号", "氏名", "", ""], [110, 0, 180, 120])
+        table = make_table(self.content_area, ["社員番号", "氏名", "", "", ""], [90, 0, 160, 100, 100])
         for i, user in enumerate(users):
-            if is_admin(app.database, user):
-                admin_button = make_sub_button(table, "管理者をやめる", None, width=170, height=48)
+            admin = is_admin(app.database, user)
+            if admin:
+                admin_button = make_sub_button(table, "管理者をやめる", None, width=155, height=48)
                 delete_part = make_tag(table, "  管理者  ", BLUE_TAG)   # 管理者は消せない
             else:
-                admin_button = make_sub_button(table, "管理者にする", None, width=170, height=48)
-                delete_part = make_sub_button(table, "消す", None, width=110, height=48)
+                admin_button = make_sub_button(table, "管理者にする", None, width=155, height=48)
+                delete_part = make_sub_button(table, "消す", None, width=95, height=48)
                 delete_part.configure(command=lambda b=delete_part, u=user: self.press_delete(b, u))
-            admin_button.configure(font=make_font(17), command=lambda u=user: self.press_admin(u))
-            add_table_row(table, i, [user["employee_number"], user["name"], admin_button, delete_part])
+            admin_button.configure(font=make_font(16), command=lambda u=user: self.press_admin(u))
+
+            # 追加機能: 部署は名前の下に小さく出す。利用停止・再開のボタン
+            name_text = user["name"]
+            active_part = ""
+            if config.USE_USER_INFO:
+                if user_info.department_of(user) != "":
+                    name_text += "\n" + user_info.department_of(user)
+                if not admin:
+                    if user_info.is_active(user):
+                        active_part = make_sub_button(table, "停止", None, width=95, height=48)
+                    else:
+                        active_part = make_sub_button(table, "再開", None, width=95, height=48)
+                        name_text += "(停止中)"
+                    active_part.configure(font=make_font(16), command=lambda u=user: self.press_active(u))
+
+            add_table_row(table, i, [user["employee_number"], name_text, admin_button, active_part, delete_part])
 
         if not users:
-            show_empty(table, "まだ誰も登録されていません。", 4)
+            show_empty(table, "まだ誰も登録されていません。", 5)
+
+    def press_active(self, user):
+        # 利用停止 ⇔ 再開 を切り替える(記録は消えない)
+        try:
+            user_info.set_active(self.app.database, user, not user_info.is_active(user),
+                                 user_is_admin=is_admin(self.app.database, user))
+        except Exception as e:
+            self.app.show_error(e, retry=lambda: self.app.show(UserListScreen), retry_text="一覧に戻る")
+            return
+        log.info("利用停止・再開を切り替えた: %s", user["employee_number"])
+        self.app.show(UserListScreen)
 
     def press_admin(self, user):
         try:
@@ -304,6 +346,8 @@ class UserListScreen(Screen):
                 set_admin(self.app.database, user, False)
                 log.info("管理者をやめた: %s", user["employee_number"])
             else:
+                if config.USE_USER_INFO and not user_info.is_active(user):
+                    raise RentalError("管理者にできません", "利用停止中の人は管理者にできません。先に「再開」を押してください。")
                 set_admin(self.app.database, user, True)
                 log.info("管理者にした: %s", user["employee_number"])
         except Exception as e:
@@ -328,23 +372,81 @@ class UserListScreen(Screen):
         self.app.show(UserListScreen)
 
 
+PERIODS = [("今日", 1), ("7日", 7), ("30日", 30), ("全部", None)]   # (ボタンの文字, 何日前から)
+
+
+def search_rentals(rentals, word, days, now):
+    # word: 名前か社員番号の一部(借りた人・返した人のどちらかに入っていればよい)。空なら絞らない
+    # days: 貸出日時が今から何日以内か。None なら絞らない
+    found = []
+    for rental in rentals:
+        if days is not None:
+            start_of_period = (now - timedelta(days=days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            if parse_time(rental["rented_at"]) < start_of_period:
+                continue
+        if word != "":
+            names = [rental["borrower_name"], rental["borrower_number"],
+                     rental["returner_name"] or "", rental["returner_number"] or ""]
+            if not any(word in name for name in names):
+                continue
+        found.append(rental)
+    return found
+
+
 class HistoryScreen(Screen):
     def __init__(self, app):
         super().__init__(app)
         self.show_steps(ADMIN_STEPS, 1)
-        self.show_title("貸出の履歴(新しい 30 件)")
+        self.show_title("貸出の履歴")
         self.add_left_button("◀ メニュー", lambda: back_to_menu(app))
         self.save_button = self.add_right_button("ファイルに保存", self.save_files)
 
+        self.days = None   # 選んでいる期間(None = 全部)
+
+        # 検索の行:名前・社員番号(キーボード)と、期間のボタン(タッチ)
+        search_row = customtkinter.CTkFrame(self.content_area, fg_color="transparent")
+        search_row.pack(fill="x", pady=(0, 8))
+        self.word_entry = customtkinter.CTkEntry(search_row, width=200, height=48, font=make_font(17),
+                                                 placeholder_text="名前・社員番号", fg_color=WHITE,
+                                                 text_color=TEXT_COLOR, border_width=2, border_color=BORDER_COLOR)
+        self.word_entry.pack(side="left")
+        self.word_entry.bind("<Return>", lambda event: self.show_rentals())   # Enter でも検索
+        self.word_entry.bind("<KeyPress>", self.app.record_touch, add="+")
+        make_sub_button(search_row, "検索", self.show_rentals, width=80, height=48).pack(side="left", padx=(6, 16))
+
+        self.period_buttons = {}
+        for text, days in PERIODS:
+            button = make_sub_button(search_row, text, lambda d=days: self.choose_period(d), width=70, height=48)
+            button.configure(font=make_font(17))
+            button.pack(side="left", padx=3)
+            self.period_buttons[days] = button
+
+        self.table_area = customtkinter.CTkFrame(self.content_area, fg_color="transparent")
+        self.table_area.pack(fill="both", expand=True)
+        self.choose_period(None)
+
+    def choose_period(self, days):
+        self.days = days
+        for d, button in self.period_buttons.items():
+            show_as_selected(button, d == days)
+            button.configure(font=make_font(17, d == days))
+        self.show_rentals()
+
+    def show_rentals(self):
+        # 表を作り直す(画面全体は作り直さない)
+        for widget in self.table_area.winfo_children():
+            widget.destroy()
+
         headers = ["貸出日時", "借りた人", "返した人", "返却日時"]
-        widths = [140, 0, 0, 140]
+        widths = [130, 0, 0, 130]
         if config.USE_OVERDUE_RECORD:
             headers.append("延滞")
-            widths.append(90)
-        table = make_table(self.content_area, headers, widths)
+            widths.append(80)
+        table = make_table(self.table_area, headers, widths)
 
-        rentals = app.database.list_rentals()[:30]
-        for i, rental in enumerate(rentals):
+        word = self.word_entry.get().strip()
+        found = search_rentals(self.app.database.list_rentals(), word, self.days, datetime.now())
+        for i, rental in enumerate(found[:30]):
             if rental["returned_at"] is None:
                 returner = "—"
                 returned = make_tag(table, "  貸出中  ", BLUE_TAG)
@@ -361,8 +463,12 @@ class HistoryScreen(Screen):
                     row.append("")
             add_table_row(table, i, row)
 
-        if not rentals:
-            show_empty(table, "まだ記録はありません。", len(headers))
+        if not found:
+            show_empty(table, "当てはまる記録はありません。", len(headers))
+        elif len(found) > 30:
+            show_more = make_label(table, f"ほかに {len(found) - 30} 件あります(全部見るときは「ファイルに保存」)",
+                                   16, color=SUB_TEXT_COLOR)
+            show_more.grid(row=len(found[:30]) * 2 + 2, column=0, columnspan=len(headers), sticky="w", padx=6, pady=8)
 
     def save_files(self):
         # 全件を Excel と CSV で exports/ に保存する
