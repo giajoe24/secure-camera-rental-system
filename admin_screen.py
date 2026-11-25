@@ -15,7 +15,7 @@ import events
 import export
 import overdue_record
 import user_info
-from db import RentalError, normalize_card_id, parse_time
+from db import RentalError, check_employee_number, normalize_card_id, parse_time
 from gui_parts import (BLUE, BLUE_TAG, BORDER_COLOR, ERROR_TEXT_COLOR, GREEN_TAG, RED_TAG, SUB_TEXT_COLOR,
                        TEXT_COLOR, WHITE, YELLOW_TAG, Screen, disable_button, format_date_time, make_font, make_label,
                        make_line, make_sub_button, make_tag, show_as_selected)
@@ -284,6 +284,7 @@ def show_empty(table, text, columns):
 
 
 class UserListScreen(Screen):
+    # 利用者の一覧。直したいときは「編集」から(管理者・停止・削除も編集画面でする)
     def __init__(self, app):
         super().__init__(app)
         self.show_steps(ADMIN_STEPS, 1)
@@ -296,79 +297,189 @@ class UserListScreen(Screen):
         self.show_title(f"利用者の一覧({len(users)} 人)")
         self.add_left_button("◀ メニュー", lambda: back_to_menu(app))
 
-        table = make_table(self.content_area, ["社員番号", "氏名", "", "", ""], [90, 0, 160, 100, 100])
+        table = make_table(self.content_area, ["社員番号", "氏名", "", ""], [110, 0, 130, 120])
         for i, user in enumerate(users):
-            admin = is_admin(app.database, user)
-            if admin:
-                admin_button = make_sub_button(table, "管理者をやめる", None, width=155, height=48)
-                delete_part = make_tag(table, "  管理者  ", BLUE_TAG)   # 管理者は消せない
-            else:
-                admin_button = make_sub_button(table, "管理者にする", None, width=155, height=48)
-                delete_part = make_sub_button(table, "消す", None, width=95, height=48)
-                delete_part.configure(command=lambda b=delete_part, u=user: self.press_delete(b, u))
-            admin_button.configure(font=make_font(16), command=lambda u=user: self.press_admin(u))
-
-            # 追加機能: 部署は名前の下に小さく出す。利用停止・再開のボタン
             name_text = user["name"]
-            active_part = ""
+            state = ""
+            if is_admin(app.database, user):
+                state = make_tag(table, "  管理者  ", BLUE_TAG)
             if config.USE_USER_INFO:
                 if user_info.department_of(user) != "":
-                    name_text += "\n" + user_info.department_of(user)
-                if not admin:
-                    if user_info.is_active(user):
-                        active_part = make_sub_button(table, "停止", None, width=95, height=48)
-                    else:
-                        active_part = make_sub_button(table, "再開", None, width=95, height=48)
-                        name_text += "(停止中)"
-                    active_part.configure(font=make_font(16), command=lambda u=user: self.press_active(u))
+                    name_text += "\n" + user_info.department_of(user)   # 部署は名前の下に
+                if not user_info.is_active(user):
+                    state = make_tag(table, "  停止中  ", YELLOW_TAG)
 
-            add_table_row(table, i, [user["employee_number"], name_text, admin_button, active_part, delete_part])
+            edit_button = make_sub_button(table, "編集", lambda u=user: app.show(EditUserScreen, user_id=u["id"]),
+                                          width=110, height=48)
+            add_table_row(table, i, [user["employee_number"], name_text, state, edit_button])
 
         if not users:
-            show_empty(table, "まだ誰も登録されていません。", 5)
+            show_empty(table, "まだ誰も登録されていません。", 4)
 
-    def press_active(self, user):
-        # 利用停止 ⇔ 再開 を切り替える(記録は消えない)
+
+def update_user(database, user, employee_number, name):
+    # 社員番号と氏名を直す(入力ミスの修正など)。記録(logs)は user_id でつながっているので、そのまま
+    employee_number = check_employee_number(employee_number)
+    if name == "":
+        raise RentalError("直せません", "氏名を入れてください。")
+    other = database.select_one("SELECT id FROM users WHERE employee_number = ? AND id != ?",
+                                (employee_number, user["id"]))
+    if other is not None:
+        raise RentalError("直せません", "その社員番号はほかの人が使っています。")
+    database.execute("UPDATE users SET employee_number = ?, name = ? WHERE id = ?", (employee_number, name, user["id"]))
+
+
+def change_card(database, user, card_id):
+    # 社員証を取り替える(なくした・新しくなったとき)。前の社員証は使えなくなる
+    card_id = normalize_card_id(card_id)
+    if database.find_user_by_card(card_id) is not None:
+        raise RentalError("変えられません", "この社員証はもうほかの人に登録されています。")
+    database.execute("UPDATE users SET card_id = ? WHERE id = ?", (card_id, user["id"]))
+
+
+class EditUserScreen(Screen):
+    # 1 人分の情報を直す画面
+    #   上:社員番号・部署・氏名 →「保存する」
+    #   下:社員証を変える / 管理者にする・やめる / 停止・再開 / 消す
+    def __init__(self, app, user_id, message=None):
+        super().__init__(app)
+        self.user = app.database.select_one("SELECT * FROM users WHERE id = ?", (user_id,))
+        self.admin = is_admin(app.database, self.user)
+        self.show_steps(ADMIN_STEPS, 1)
+
+        make_label(self.top_area, f"{self.user['name']} さんの情報", 24, True).pack(anchor="w")
+        if message is None:
+            message = f"カードID {self.user['card_id']}"
+        self.note_label = make_label(self.top_area, message, color=SUB_TEXT_COLOR)
+        self.note_label.pack(anchor="w", pady=(4, 0))
+
+        self.add_left_button("◀ 一覧", lambda: app.show(UserListScreen))
+        self.add_right_button("保存する", self.save)
+
+        # ---- 入力欄(今の値を入れておく) ----
+        form = customtkinter.CTkFrame(self.content_area, fg_color="transparent")
+        form.pack(fill="x")
+        form.grid_columnconfigure(0, minsize=100)
+        form.grid_columnconfigure((1, 3), weight=1, uniform="entry")
+
+        make_label(form, "社員番号", color=SUB_TEXT_COLOR).grid(row=0, column=0, sticky="w", pady=6)
+        self.number_entry = self.make_filled_entry(form, self.user["employee_number"])
+        self.number_entry.grid(row=0, column=1, sticky="ew", pady=6)
+
+        self.department_entry = None
+        if config.USE_USER_INFO:
+            make_label(form, "部署", color=SUB_TEXT_COLOR).grid(row=0, column=2, sticky="w", padx=(16, 8), pady=6)
+            self.department_entry = self.make_filled_entry(form, user_info.department_of(self.user))
+            self.department_entry.grid(row=0, column=3, sticky="ew", pady=6)
+
+        make_label(form, "氏名", color=SUB_TEXT_COLOR).grid(row=1, column=0, sticky="w", pady=6)
+        self.name_entry = self.make_filled_entry(form, self.user["name"])
+        self.name_entry.grid(row=1, column=1, columnspan=3, sticky="ew", pady=6)
+
+        # ---- そのほかの操作 ----
+        actions = customtkinter.CTkFrame(self.content_area, fg_color="transparent")
+        actions.pack(fill="x", pady=(10, 0))
+
+        self.add_action(actions, "社員証を変える", self.start_change_card)
+        if self.admin:
+            self.add_action(actions, "管理者をやめる", self.press_admin)
+        else:
+            self.add_action(actions, "管理者にする", self.press_admin)
+        if config.USE_USER_INFO and not self.admin:
+            if user_info.is_active(self.user):
+                self.add_action(actions, "利用停止", self.press_active)
+            else:
+                self.add_action(actions, "利用再開", self.press_active)
+        if not self.admin:   # 管理者は消せない
+            self.delete_button = self.add_action(actions, "消す", self.press_delete)
+
+    def make_filled_entry(self, parent, value):
+        entry = customtkinter.CTkEntry(parent, height=52, font=make_font(20), fg_color=WHITE, text_color=TEXT_COLOR,
+                                       border_width=2, border_color=BORDER_COLOR, corner_radius=8)
+        entry.insert(0, value)
+        entry.bind("<KeyPress>", self.app.record_touch, add="+")
+        return entry
+
+    def add_action(self, parent, text, command):
+        button = make_sub_button(parent, text, command, width=160, height=52)
+        button.configure(font=make_font(17))
+        button.pack(side="left", padx=(0, 10))
+        return button
+
+    def show_error_text(self, text):
+        self.note_label.configure(text=text, text_color=ERROR_TEXT_COLOR, font=make_font(17, True))
+
+    def again(self, message):
+        # 同じ画面を最新の内容で出し直す
+        self.app.show(EditUserScreen, user_id=self.user["id"], message=message)
+
+    def save(self):
+        number = self.number_entry.get().strip()
+        name = self.name_entry.get().strip()
         try:
-            user_info.set_active(self.app.database, user, not user_info.is_active(user),
-                                 user_is_admin=is_admin(self.app.database, user))
-        except Exception as e:
-            self.app.show_error(e, retry=lambda: self.app.show(UserListScreen), retry_text="一覧に戻る")
+            update_user(self.app.database, self.user, number, name)
+            if self.department_entry is not None:
+                user_info.set_department(self.app.database, self.user, self.department_entry.get().strip())
+        except RentalError as e:
+            self.show_error_text(e.message)
             return
-        log.info("利用停止・再開を切り替えた: %s", user["employee_number"])
-        self.app.show(UserListScreen)
+        log.info("利用者の情報を直した: %s", number)
+        self.again("保存しました。")
 
-    def press_admin(self, user):
+    def start_change_card(self):
+        user_id = self.user["id"]
+
+        def card_read(app, card_id):
+            change_card(app.database, app.database.select_one("SELECT * FROM users WHERE id = ?", (user_id,)), card_id)
+            log.info("社員証を変えた: user_id=%s", user_id)
+            app.show(EditUserScreen, user_id=user_id, message="社員証を変えました。前の社員証は使えません。")
+
+        self.app.scan_card(["新しい社員証", "完了"], card_read,
+                           back=lambda: self.app.show(EditUserScreen, user_id=user_id), back_name="編集")
+
+    def press_admin(self):
         try:
-            if is_admin(self.app.database, user):
+            if self.admin:
                 if count_admins(self.app.database) == 1:
                     raise RentalError("やめられません", "管理者がいなくなります。先にほかの人を管理者にしてください。")
-                set_admin(self.app.database, user, False)
-                log.info("管理者をやめた: %s", user["employee_number"])
+                set_admin(self.app.database, self.user, False)
+                message = "管理者をやめました。"
             else:
-                if config.USE_USER_INFO and not user_info.is_active(user):
-                    raise RentalError("管理者にできません", "利用停止中の人は管理者にできません。先に「再開」を押してください。")
-                set_admin(self.app.database, user, True)
-                log.info("管理者にした: %s", user["employee_number"])
-        except Exception as e:
-            self.app.show_error(e, retry=lambda: self.app.show(UserListScreen), retry_text="一覧に戻る",
-                                back=lambda: back_to_menu(self.app), back_text="メニューに戻る")
+                if config.USE_USER_INFO and not user_info.is_active(self.user):
+                    raise RentalError("管理者にできません", "利用停止中の人は管理者にできません。先に「利用再開」を押してください。")
+                set_admin(self.app.database, self.user, True)
+                message = "管理者にしました。"
+        except RentalError as e:
+            self.show_error_text(e.message)
             return
-        self.app.show(UserListScreen)
+        log.info("%s: %s", message, self.user["employee_number"])
+        self.again(message)
 
-    def press_delete(self, button, user):
-        # 1回目は「本当に消す」に変えるだけ。2回目で消す(指が当たっただけで消えないように)
-        if button.cget("text") == "消す":
-            button.configure(text="本当に消す", text_color=ERROR_TEXT_COLOR, border_color=ERROR_TEXT_COLOR)
-            return
-
+    def press_active(self):
+        # 利用停止 ⇔ 再開 を切り替える(記録は消えない)
+        active = not user_info.is_active(self.user)
         try:
-            delete_user(self.app.database, user)
-        except Exception as e:
-            self.app.show_error(e, retry=lambda: self.app.show(UserListScreen), retry_text="一覧に戻る",
-                                back=lambda: back_to_menu(self.app), back_text="メニューに戻る")
+            user_info.set_active(self.app.database, self.user, active, user_is_admin=self.admin)
+        except RentalError as e:
+            self.show_error_text(e.message)
             return
-        log.info("利用者を消した: %s", user["employee_number"])
+        log.info("利用停止・再開を切り替えた: %s", self.user["employee_number"])
+        if active:
+            self.again("利用を再開しました。")
+        else:
+            self.again("利用停止にしました。この社員証では借りる・返す・延長ができません。")
+
+    def press_delete(self):
+        # 1回目は「本当に消す」に変えるだけ。2回目で消す(指が当たっただけで消えないように)
+        if self.delete_button.cget("text") == "消す":
+            self.delete_button.configure(text="本当に消す", text_color=ERROR_TEXT_COLOR, border_color=ERROR_TEXT_COLOR)
+            return
+        try:
+            delete_user(self.app.database, self.user)
+        except RentalError as e:
+            self.show_error_text(e.message)
+            return
+        log.info("利用者を消した: %s", self.user["employee_number"])
         self.app.show(UserListScreen)
 
 

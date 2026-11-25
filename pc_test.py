@@ -10,6 +10,8 @@ import tkinter
 
 import customtkinter
 
+import config
+
 from gui_parts import SUB_TEXT_COLOR, make_font, make_label, make_sub_button
 
 log = logging.getLogger(__name__)
@@ -56,44 +58,83 @@ class PcLock:
 
 
 class TestWindow(customtkinter.CTkToplevel):
+    # 本体の画面の右に出す、操作用の小さいウィンドウ
     def __init__(self, app, card_reader, lock):
         super().__init__(app)
         self.app = app
         self.card_reader = card_reader
         self.lock = lock
+        self.shown_users = None   # いまボタンにしている利用者(変わったら作り直す)
+        self.new_card_number = 0
         self.title("テスト用(PC)")
-        self.geometry("320x560+820+0")
+        self.geometry("340x700+820+0")
 
-        make_label(self, "社員証をかざす", 16, True).pack(anchor="w", padx=12, pady=(10, 4))
-        self.card_area = tkinter.Frame(self)
-        self.card_area.pack(fill="x", padx=12)
-        make_sub_button(self, "利用者を読み直す", self.show_cards, width=290, height=36).pack(padx=12, pady=4)
+        # ---- 社員証 ----
+        make_label(self, "社員証をかざす", 16, True).pack(anchor="w", padx=12, pady=(10, 2))
+        make_label(self, "登録した人は自動でボタンになります", 13, color=SUB_TEXT_COLOR).pack(anchor="w", padx=12)
+        self.card_area = customtkinter.CTkScrollableFrame(self, height=230, fg_color="transparent")
+        self.card_area.pack(fill="x", padx=6)
 
+        make_sub_button(self, "新しいカード(毎回ちがう ID)", self.touch_new_card,
+                        width=310, height=36).pack(padx=12, pady=(6, 2))
+
+        id_row = tkinter.Frame(self)
+        id_row.pack(fill="x", padx=12, pady=4)
+        self.id_entry = customtkinter.CTkEntry(id_row, width=190, height=36, font=make_font(14),
+                                               placeholder_text="カードIDを入れる")
+        self.id_entry.pack(side="left")
+        make_sub_button(id_row, "かざす", self.touch_typed_card, width=110, height=36).pack(side="left", padx=(8, 0))
+
+        # ---- 扉 ----
         make_label(self, "扉", 16, True).pack(anchor="w", padx=12, pady=(14, 4))
-        make_sub_button(self, "扉を閉める(施錠)", self.relock, width=290, height=40).pack(padx=12, pady=3)
-        make_sub_button(self, "こじ開ける(不正な開放)", self.force_open, width=290, height=40).pack(padx=12, pady=3)
-        self.stuck_box = customtkinter.CTkCheckBox(self, text="解錠しても扉が開かない", font=make_font(14),
-                                                   command=self.change_stuck)
-        self.stuck_box.pack(anchor="w", padx=12, pady=6)
-        self.state_label = make_label(self, "", 14, color=SUB_TEXT_COLOR)
-        self.state_label.pack(anchor="w", padx=12, pady=6)
+        self.state_label = make_label(self, "", 15, True)
+        self.state_label.pack(anchor="w", padx=12, pady=(0, 6))
+        make_sub_button(self, "扉を閉める(施錠)", self.relock, width=310, height=40).pack(padx=12, pady=3)
+        make_sub_button(self, "こじ開ける(不正な開放を試す)", self.force_open, width=310, height=40).pack(padx=12, pady=3)
 
-        self.show_cards()
-        self.show_state()
+        self.stuck_box = customtkinter.CTkCheckBox(self, text="ロックが外れない(取り消しを試す)", font=make_font(14),
+                                                   command=self.change_stuck)
+        self.stuck_box.pack(anchor="w", padx=12, pady=(10, 2))
+        self.stuck_label = make_label(self, "", 13, color=SUB_TEXT_COLOR)
+        self.stuck_label.configure(wraplength=310)
+        self.stuck_label.pack(anchor="w", padx=12)
+        self.change_stuck()
+
+        self.update_panel()
+
+    # ---- 社員証 ----
 
     def show_cards(self):
         for widget in self.card_area.winfo_children():
             widget.destroy()
         for user in self.app.database.list_users():
+            if user["card_id"].startswith("DELETED-"):
+                continue
             text = f"{user['name']}({user['employee_number']})"
-            button = make_sub_button(self.card_area, text, lambda c=user["card_id"]: self.card_reader.touch(c),
+            button = make_sub_button(self.card_area, text, lambda c=user["card_id"]: self.touch(c),
                                      width=290, height=36)
             button.configure(font=make_font(14))
             button.pack(pady=2)
         unknown = make_sub_button(self.card_area, "登録されていないカード",
-                                  lambda: self.card_reader.touch("FFFFFFFFFFFFFFFF"), width=290, height=36)
+                                  lambda: self.touch("FFFFFFFFFFFFFFFF"), width=290, height=36)
         unknown.configure(font=make_font(14))
         unknown.pack(pady=2)
+
+    def touch(self, card_id):
+        log.info("(PC)カード %s をかざしたことにします", card_id)
+        self.card_reader.touch(card_id)
+
+    def touch_new_card(self):
+        # 登録のテスト用。押すたびに、まだ使っていない ID にする
+        self.new_card_number += 1
+        self.touch(f"PC{self.new_card_number:014X}")
+
+    def touch_typed_card(self):
+        card_id = self.id_entry.get().strip()
+        if card_id != "":
+            self.touch(card_id)
+
+    # ---- 扉 ----
 
     def relock(self):
         self.lock.locked = True
@@ -103,11 +144,26 @@ class TestWindow(customtkinter.CTkToplevel):
 
     def change_stuck(self):
         self.lock.stuck = self.stuck_box.get() == 1
-
-    def show_state(self):
-        if self.lock.locked:
-            text = "扉: 閉まっている(施錠)"
+        if self.lock.stuck:
+            text = (f"ON:「借りる」「返す」を押しても扉が開きません。"
+                    f"{config.UNLOCK_WAIT_SECONDS} 秒後に取り消しの画面になります。")
         else:
-            text = "扉: 開いている"
-        self.state_label.configure(text=text)
-        self.after(300, self.show_state)
+            text = "OFF:「借りる」「返す」を押すと扉が開きます。"
+        self.stuck_label.configure(text=text)
+
+    # ---- 0.3 秒ごとに表示を最新にする ----
+
+    def update_panel(self):
+        if self.lock.locked:
+            text = "今:閉まっている(施錠)"
+        else:
+            text = "今:開いている"
+        if self.state_label.cget("text") != text:
+            self.state_label.configure(text=text)
+
+        users = [tuple(user) for user in self.app.database.list_users()]
+        if users != self.shown_users:   # 登録・変更があったらボタンを作り直す
+            self.shown_users = users
+            self.show_cards()
+
+        self.after(300, self.update_panel)

@@ -320,5 +320,30 @@ class AddonTest(unittest.TestCase):
         self.assertEqual(len(search(rentals, "いない人", None, NOW)), 0)
 
 
+    # ---- 利用者の編集 ----
+
+    def test_update_user(self):
+        admin_screen.update_user(self.database, self.mori, "１２３４５６７", "森 航太")   # 全角の数字でもよい
+        mori = self.database.find_user_by_card("BBBB")
+        self.assertEqual((mori["employee_number"], mori["name"]), ("1234567", "森 航太"))
+
+    def test_update_user_rejects_bad_input(self):
+        with self.assertRaises(RentalError):
+            admin_screen.update_user(self.database, self.mori, "123", "森")          # 7 桁でない
+        with self.assertRaises(RentalError):
+            admin_screen.update_user(self.database, self.mori, "1000001", "森")      # ほかの人の番号
+        with self.assertRaises(RentalError):
+            admin_screen.update_user(self.database, self.mori, "1000002", "")        # 氏名が空
+
+    def test_change_card(self):
+        self.borrow(self.mori)
+        admin_screen.change_card(self.database, self.mori, "cc:dd:ee")
+        self.assertIsNone(self.database.find_user_by_card("BBBB"))                    # 前の社員証は使えない
+        self.assertEqual(self.database.find_user_by_card("CCDDEE")["name"], "森 航太郎")
+        self.assertEqual(self.database.current_rental()["name"], "森 航太郎")       # 記録はそのまま
+        with self.assertRaises(RentalError):
+            admin_screen.change_card(self.database, self.mori, "AAAA")                # ほかの人の社員証
+
+
 if __name__ == "__main__":
     unittest.main()
