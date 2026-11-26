@@ -12,7 +12,7 @@ digraph G {
   ok [label="ここで初めて\n「借りた」ことになる", shape=plain, style="", fontcolor="#027A48"];
   ng [label="借りたことにならない", shape=plain, style="", fontcolor="#B42318"];
   press -> r1 [label="すぐ書く"];
-  r1 -> r2 [label="扉が開いて\n閉まった"];
+  r1 -> r2 [label="棚が開いて\n閉まった"];
   r1 -> r3 [label="30 秒\n開かなかった"];
   r1 -> r4 [label="停電で止まった\n→ 次の起動で"];
   r2 -> ok [style=dashed, arrowhead=none]; r3 -> ng [style=dashed, arrowhead=none]; r4 -> ng [style=dashed, arrowhead=none];

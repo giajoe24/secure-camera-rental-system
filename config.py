@@ -9,7 +9,7 @@ EXPORT_DIR = BASE_DIR / "exports"   # Excel の保存先
 
 # ---- 動かし方 ----
 MUST_ONLY = False       # True にすると追加機能を全部止めて、MUST だけの動きになる
-USE_HARDWARE = True     # False にすると PC で試せる(社員証と扉はテスト用ウィンドウのボタンで代わりにする)
+USE_HARDWARE = True     # False にすると PC で試せる(社員証と棚はテスト用ウィンドウのボタンで代わりにする)
 
 CAMERA_NAME = "セキュアカメラ"
 ITEM_NAME = "カメラ"    # 箱から取り出すもの。画面の「○○を取り出して」に使う
@@ -36,8 +36,8 @@ CARD_TARGETS = ["212F", "106A", "106B"]  # FeliCa / Type A / Type B
 # 待ち時間(秒)。MTG では 10〜30 秒で、実機で確かめてから決めることになった
 CARD_WAIT_SECONDS = 30        # 社員証をかざすのを待つ
 IDLE_SECONDS = 30             # 操作がないとホームに戻る
-UNLOCK_WAIT_SECONDS = 30   # 解錠してから扉が開かれるのを待つ(過ぎたら取り消し)
-UNLOCKED_WARN_SECONDS = 60  # 扉が開いたままこれだけたったら警告を出す
+UNLOCK_WAIT_SECONDS = 30   # 解錠してから棚が開かれるのを待つ(過ぎたら取り消し)
+UNLOCKED_WARN_SECONDS = 60  # 棚が開いたままこれだけたったら警告を出す
 DONE_SCREEN_SECONDS = 5       # 完了画面を出しておく
 
 # 日本語入力(管理画面の氏名)。fcitx5 + Mozc を入れておく(docs/日本語入力の設定.txt)
@@ -69,7 +69,7 @@ BACKUP_KEEP_DAYS = 31        # 記録は最低1か月残す決まりなので、
 
 USE_ADMIN_SCREEN = True      # 管理画面(admin_screen.py)。OFF なら登録は register.py で
 USE_EVENTS = True            # できごとの記録(events.py):未登録カード、不正な開放、閉め忘れ、エラー
-USE_FORCED_OPEN_CHECK = True # 解錠していないのに扉が開いたら警告する(forced_open.py)
+USE_FORCED_OPEN_CHECK = True # 解錠していないのに棚が開いたら警告する(forced_open.py)
 
 USE_USER_INFO = True         # 利用者の部署と、利用停止・再開(user_info.py)
 

@@ -163,7 +163,7 @@ class AddonTest(unittest.TestCase):
 
     def test_events_are_added(self):
         events.add_event(self.database, events.UNKNOWN_CARD, "カードID FFFF")
-        events.add_event(self.database, events.FORCED_OPEN, "解錠していないのに扉が開いた")
+        events.add_event(self.database, events.FORCED_OPEN, "解錠していないのに棚が開いた")
         kinds = [e["kind"] for e in events.list_events(self.database)]
         self.assertEqual(kinds, [events.FORCED_OPEN, events.UNKNOWN_CARD])   # 新しい順
 
@@ -262,7 +262,7 @@ class AddonTest(unittest.TestCase):
         opened = []
         with self.assertRaises(sqlite3.OperationalError):
             self.database.start(BORROW, self.mori, lambda: opened.append(True), due_at=NOW)
-        self.assertEqual(opened, [])   # 記録できないので扉は開けていない
+        self.assertEqual(opened, [])   # 記録できないので棚は開けていない
 
 
     # ---- 部署と利用停止 ----

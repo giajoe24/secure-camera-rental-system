@@ -1,6 +1,6 @@
 # PC で試すための代わりの機器(config.USE_HARDWARE = False のとき main.py が使う)
 #   PcCardReader : 社員証の代わり。テスト用ウィンドウのボタンで「かざした」ことにする
-#   PcLock       : 電磁ロックとスイッチの代わり。テスト用ウィンドウのボタンで扉を開け閉めする
+#   PcLock       : 電磁ロックとスイッチの代わり。テスト用ウィンドウのボタンで棚を開け閉めする
 #   TestWindow   : 上の2つを操作する小さいウィンドウ(本体の画面とは別に出る)
 
 import logging
@@ -43,7 +43,7 @@ class PcLock:
     def __init__(self):
         self.ready = True
         self.locked = True
-        self.stuck = False   # True のときは、解錠しても扉が開かない(取り消しを試す用)
+        self.stuck = False   # True のときは、解錠しても棚が開かない(取り消しを試す用)
 
     def is_locked(self):
         return self.locked
@@ -85,11 +85,11 @@ class TestWindow(customtkinter.CTkToplevel):
         self.id_entry.pack(side="left")
         make_sub_button(id_row, "かざす", self.touch_typed_card, width=110, height=36).pack(side="left", padx=(8, 0))
 
-        # ---- 扉 ----
-        make_label(self, "扉", 16, True).pack(anchor="w", padx=12, pady=(14, 4))
+        # ---- 棚 ----
+        make_label(self, "棚", 16, True).pack(anchor="w", padx=12, pady=(14, 4))
         self.state_label = make_label(self, "", 15, True)
         self.state_label.pack(anchor="w", padx=12, pady=(0, 6))
-        make_sub_button(self, "扉を閉める(施錠)", self.relock, width=310, height=40).pack(padx=12, pady=3)
+        make_sub_button(self, "棚を閉める(施錠)", self.relock, width=310, height=40).pack(padx=12, pady=3)
         make_sub_button(self, "こじ開ける(不正な開放を試す)", self.force_open, width=310, height=40).pack(padx=12, pady=3)
 
         self.stuck_box = customtkinter.CTkCheckBox(self, text="ロックが外れない(取り消しを試す)", font=make_font(14),
@@ -134,7 +134,7 @@ class TestWindow(customtkinter.CTkToplevel):
         if card_id != "":
             self.touch(card_id)
 
-    # ---- 扉 ----
+    # ---- 棚 ----
 
     def relock(self):
         self.lock.locked = True
@@ -145,10 +145,10 @@ class TestWindow(customtkinter.CTkToplevel):
     def change_stuck(self):
         self.lock.stuck = self.stuck_box.get() == 1
         if self.lock.stuck:
-            text = (f"ON:「借りる」「返す」を押しても扉が開きません。"
+            text = (f"ON:「借りる」「返す」を押しても棚が開きません。"
                     f"{config.UNLOCK_WAIT_SECONDS} 秒後に取り消しの画面になります。")
         else:
-            text = "OFF:「借りる」「返す」を押すと扉が開きます。"
+            text = "OFF:「借りる」「返す」を押すと棚が開きます。"
         self.stuck_label.configure(text=text)
 
     # ---- 0.3 秒ごとに表示を最新にする ----

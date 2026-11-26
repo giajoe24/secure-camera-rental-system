@@ -5,10 +5,10 @@
 #
 # 1回の貸出・返却で 2 行書く
 #   解錠したとき          step = "解錠"
-#   扉が閉まって施錠したとき step = "完了"
-#   (扉が開かれなかったとき step = "取り消し")
+#   棚が閉まって施錠したとき step = "完了"
+#   (棚が開かれなかったとき step = "取り消し")
 # カメラが貸出中かどうかは「最後の完了の行が貸出か返却か」で決める。
-# 扉が閉まるまでは完了にしないので、扉を開けただけの記録が残っても貸出中にはならない。
+# 棚が閉まるまでは完了にしないので、棚を開けただけの記録が残っても貸出中にはならない。
 
 import sqlite3
 import unicodedata
@@ -151,8 +151,8 @@ class Database:
         )
 
     def start(self, action, user, unlock, due_at=None, now=None):
-        # 「解錠」を記録して扉を開ける。
-        # 記録に失敗したら扉は開けない。扉が開かなかったら記録は取り消し(rollback)。
+        # 「解錠」を記録して棚を開ける。
+        # 記録に失敗したら棚は開けない。棚が開かなかったら記録は取り消し(rollback)。
         conn = self.open()
         try:
             with conn:
@@ -168,7 +168,7 @@ class Database:
             conn.close()
 
     def finish(self, action, user, due_at=None, now=None):
-        # 扉が閉まって施錠したら呼ぶ
+        # 棚が閉まって施錠したら呼ぶ
         conn = self.open()
         try:
             with conn:
@@ -177,7 +177,7 @@ class Database:
             conn.close()
 
     def cancel(self, action, user, note, now=None):
-        # 扉が開かれなかったときなど
+        # 棚が開かれなかったときなど
         conn = self.open()
         try:
             with conn:

@@ -17,7 +17,7 @@ def do_nothing():
 
 
 def broken_unlock():
-    raise RuntimeError("扉が開かない")
+    raise RuntimeError("棚が開かない")
 
 
 class DatabaseTest(unittest.TestCase):
@@ -58,7 +58,7 @@ class DatabaseTest(unittest.TestCase):
     # ---- 貸出 ----
 
     def test_not_rented_until_relocked(self):
-        # 解錠しただけでは貸出中にならない(扉が閉まって完了してから)
+        # 解錠しただけでは貸出中にならない(棚が閉まって完了してから)
         due = NOW + timedelta(minutes=30)
         self.db.start(BORROW, self.yamada, do_nothing, due_at=due, now=NOW)
         self.assertIsNone(self.db.current_rental())
@@ -70,7 +70,7 @@ class DatabaseTest(unittest.TestCase):
 
     def test_cancel_keeps_camera_available(self):
         self.db.start(BORROW, self.yamada, do_nothing, due_at=NOW, now=NOW)
-        self.db.cancel(BORROW, self.yamada, "扉が開かれなかったため")
+        self.db.cancel(BORROW, self.yamada, "棚が開かれなかったため")
         self.assertIsNone(self.db.current_rental())
         self.assertEqual(self.steps(), [(BORROW, UNLOCK), (BORROW, CANCEL)])
 

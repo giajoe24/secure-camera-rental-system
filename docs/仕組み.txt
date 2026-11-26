@@ -6,7 +6,7 @@
   main.py          起動するファイル。DB・カードリーダー・ロックを用意して、画面(App)を出す
   config.py        設定(GPIO の番号、待ち時間、貸出時間の選択肢など)
   gui.py           ウィンドウ本体(App)。上の帯と時計、画面の切り替え、エラー画面
-  screens.py       画面ひとつひとつ(ホーム、社員証、時間、確認、扉、完了、エラー)
+  screens.py       画面ひとつひとつ(ホーム、社員証、時間、確認、棚、完了、エラー)
   gui_parts.py     画面の部品(色、フォント、ボタン)と、全画面の土台(Screen)
   db.py            DB(SQLite)の読み書き
   card_reader.py   社員証の読み取り(RC-S380 / nfcpy)
@@ -46,9 +46,9 @@
        ConfirmScreen.borrow → database.start(貸出, 利用者, app.unlock, 返却予定)
          DB に「解錠」の行を追加 → lock.open()(5ms のパルス)→ commit
          解錠に失敗したら rollback(行は残らない)
-  5. 扉の画面
+  5. 棚の画面
        UnlockScreen が 0.2 秒ごとに lock.is_locked() を見る
-         開いた → 「扉を閉めてください」
+         開いた → 「棚を閉めてください」
          閉まった → database.finish(...) で「完了」の行を追加 → 完了画面
          30 秒開かれなかった → database.cancel(...) で「取り消し」の行を追加
        最後に export.update_excel で Excel を作り直す
@@ -100,7 +100,7 @@
   admin_screen.py      管理画面(admins テーブルを使う)
   long_rental.py       日をまたぐ貸出(出張)
   events.py            できごとの記録(未登録カード、不正な開放、閉め忘れ、エラー、期限切れ、容量不足)
-  forced_open.py       解錠していないのに扉が開いたら警告
+  forced_open.py       解錠していないのに棚が開いたら警告
   user_info.py         部署と、利用停止・再開(users に列を足す)
   storage_check.py     SD カードの空き、古いファイルの削除、DB の点検
   pc_test.py           PC で試すときの代わりの機器(USE_HARDWARE = False)

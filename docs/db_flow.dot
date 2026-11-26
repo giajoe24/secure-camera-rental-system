@@ -5,8 +5,8 @@ digraph dbflow {
   node  [fontname="Noto Sans CJK JP", fontsize=11, shape=box, style="rounded,filled", fillcolor="#FFFFFF", color="#8A939C", width=2.2];
   edge  [fontname="Noto Sans CJK JP", fontsize=10, color="#59616B"];
 
-    w_noopen [label="30秒 扉が開かない\n(UnlockScreen)"];
-    w_close  [label="扉が閉まった\n(UnlockScreen)"];
+    w_noopen [label="30秒 棚が開かない\n(UnlockScreen)"];
+    w_close  [label="棚が閉まった\n(UnlockScreen)"];
     w_press  [label="「借りる」「返す」\n(確認画面)"];
     w_boot   [label="main.py の起動"];
     w_home   [label="ホームを出す / かざした"];

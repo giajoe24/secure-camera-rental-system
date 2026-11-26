@@ -1,7 +1,7 @@
 # 画面
-# 貸出: ホーム → 社員証 → 貸出時間 → 確認 → 扉(開けて閉める) → 完了 → ホーム
-# 返却: ホーム → 社員証 → 確認 → 扉(開けて閉める) → 完了 → ホーム
-# 扉が閉まって施錠したのを確かめてから「完了」を記録する。
+# 貸出: ホーム → 社員証 → 貸出時間 → 確認 → 棚(開けて閉める) → 完了 → ホーム
+# 返却: ホーム → 社員証 → 確認 → 棚(開けて閉める) → 完了 → ホーム
+# 棚が閉まって施錠したのを確かめてから「完了」を記録する。
 
 import logging
 import threading
@@ -293,7 +293,7 @@ def show_unlock_notice(parent, button_text):
     box = tkinter.Frame(parent, bg=YELLOW_TAG[1], highlightthickness=2, highlightbackground=YELLOW_TAG[0])
     box.pack(fill="x", pady=(8, 0))
     make_tag(box, "  注意  ", (WHITE, YELLOW_TAG[0])).pack(side="left", padx=10, pady=8)
-    make_label(box, f"「{button_text}」を押すと、扉のロックが「カチッ」と開きます。", 19, True,
+    make_label(box, f"「{button_text}」を押すと、棚のロックが「カチッ」と開きます。", 19, True,
                YELLOW_TAG[0]).pack(side="left", padx=(0, 10))
 
 
@@ -388,13 +388,13 @@ class ReturnConfirmScreen(Screen):
 
 
 class UnlockScreen(Screen):
-    # 解錠したあと、扉が開いて、また閉まる(施錠する)のを待つ。
+    # 解錠したあと、棚が開いて、また閉まる(施錠する)のを待つ。
     #   UNLOCK_WAIT_SECONDS 秒たっても開かれなかったら → 取り消し
     #   開いたまま UNLOCKED_WARN_SECONDS 秒たったら      → 閉めるように警告(点滅はさせない)
     #   閉まったら                                         → 完了を記録
     # 状態はマイクロスイッチ(lock.is_locked)で 0.2 秒ごとに見る
 
-    idle_timeout = False       # 扉が開いている間はホームに戻さない
+    idle_timeout = False       # 棚が開いている間はホームに戻さない
     unlock_expected = True    # 自分で解錠しているので、不正な開放ではない
 
     def __init__(self, app, action, user, due_at=None, rental=None):
@@ -411,29 +411,29 @@ class UnlockScreen(Screen):
         item = config.ITEM_NAME
         if action == BORROW:
             self.show_steps(BORROW_STEPS, 3)
-            self.what_to_do = f"{item}を取り出して、扉を閉めてください。"
+            self.what_to_do = f"{item}を取り出して、棚を閉めてください。"
             self.reminder = f"{item}は持ち歩かず、使い終わったらすぐに返してください。"
         else:
             self.show_steps(RETURN_STEPS, 2)
-            self.what_to_do = f"{item}を中に戻して、扉を閉めてください。"
-            self.reminder = f"{item}を持ったまま扉を閉めないよう、中に置いたか確かめてください。"
+            self.what_to_do = f"{item}を中に戻して、棚を閉めてください。"
+            self.reminder = f"{item}を持ったまま棚を閉めないよう、中に置いたか確かめてください。"
 
         self.footer.pack_forget()   # ここでは押すボタンがない
 
-        self.title_label = make_label(self.top_area, "扉のロックが開きました", 30, True)
+        self.title_label = make_label(self.top_area, "棚のロックが開きました", 30, True)
         self.title_label.pack(anchor="w")
-        self.guide_label = make_label(self.top_area, "扉を開けてください。", 22, True)
+        self.guide_label = make_label(self.top_area, "棚を開けてください。", 22, True)
         self.guide_label.pack(anchor="w", pady=(8, 0))
         make_label(self.top_area, self.reminder, 18, True, BLUE_TAG[0]).pack(anchor="w", pady=(6, 0))
 
         self.note_label = make_label(self.content_area, "", color=SUB_TEXT_COLOR)
         self.note_label.pack(anchor="w")
 
-        # 警告(扉を閉め忘れたとき)。最初は出さない
+        # 警告(棚を閉め忘れたとき)。最初は出さない
         self.warning_area = tkinter.Frame(self.content_area, bg=YELLOW_TAG[1], highlightthickness=2,
                                           highlightbackground=YELLOW_TAG[0])
         make_tag(self.warning_area, "  警告  ", (WHITE, YELLOW_TAG[0])).pack(side="left", padx=12, pady=12)
-        make_label(self.warning_area, "扉が閉まっていません。扉を閉めてください。", 20, True,
+        make_label(self.warning_area, "棚が閉まっていません。棚を閉めてください。", 20, True,
                    YELLOW_TAG[0]).pack(side="left", padx=(0, 12))
 
         self.watch_lock()
@@ -447,13 +447,13 @@ class UnlockScreen(Screen):
                 self.state = "開いた"
                 self.open_time = now
                 self.guide_label.configure(text=self.what_to_do)
-                self.note_label.configure(text="扉を閉めると、記録して完了します。")
+                self.note_label.configure(text="棚を閉めると、記録して完了します。")
             elif now - self.start_time > config.UNLOCK_WAIT_SECONDS:
                 self.give_up()
                 return
             else:
                 remaining = int(config.UNLOCK_WAIT_SECONDS - (now - self.start_time))
-                text = f"あと {remaining} 秒以内に扉を開けてください。開けないと取り消しになります。"
+                text = f"あと {remaining} 秒以内に棚を開けてください。開けないと取り消しになります。"
                 if self.note_label.cget("text") != text:
                     self.note_label.configure(text=text)
 
@@ -462,7 +462,7 @@ class UnlockScreen(Screen):
                 self.finish()
                 return
             if now - self.open_time > config.UNLOCKED_WARN_SECONDS and not self.warning_area.winfo_ismapped():
-                log.warning("扉が閉まっていません")
+                log.warning("棚が閉まっていません")
                 events.add_event(self.app.database, events.LEFT_OPEN,
                                  f"{self.action}のあと {config.UNLOCKED_WARN_SECONDS} 秒 開いたまま({self.user['name']})")
                 self.warning_area.pack(fill="x", pady=(14, 0))
@@ -482,14 +482,14 @@ class UnlockScreen(Screen):
 
     def give_up(self):
         try:
-            self.app.database.cancel(self.action, self.user, "扉が開かれなかったため")
+            self.app.database.cancel(self.action, self.user, "棚が開かれなかったため")
         except Exception as e:
             self.app.show_error(e)
             return
-        log.info("%sの取り消し(扉が開かれなかった): %s", self.action, self.user["employee_number"])
+        log.info("%sの取り消し(棚が開かれなかった): %s", self.action, self.user["employee_number"])
         export.update_excel(self.app.database)
         self.app.show(MessageScreen, title=f"{self.action}を取り消しました",
-                      message="扉が開かれなかったため、取り消しました。もう一度最初からやり直してください。",
+                      message="棚が開かれなかったため、取り消しました。もう一度最初からやり直してください。",
                       tag="取り消し")
 
 

@@ -82,7 +82,7 @@ class App(customtkinter.CTk):
         if self.clock_label.cget("text") != text:
             self.clock_label.configure(text=text)
 
-        # 追加機能: 解錠していないのに扉が開いていないか
+        # 追加機能: 解錠していないのに棚が開いていないか
         if config.USE_FORCED_OPEN_CHECK:
             forced_open.check(self)
 
@@ -130,7 +130,7 @@ class App(customtkinter.CTk):
         elif isinstance(error, LockError):
             log.error("解錠に失敗: %s", error)
             events.add_event(self.database, events.ERROR, f"解錠に失敗: {error}")
-            title = "扉が開きませんでした"
+            title = "棚が開きませんでした"
             message = "記録は取り消しました。管理者に連絡してください。"
         elif isinstance(error, CardReaderError):
             log.error("カードリーダーのエラー: %s", error)
@@ -141,12 +141,12 @@ class App(customtkinter.CTk):
             log.exception("DB のエラー", exc_info=error)
             events.add_event(self.database, events.ERROR, f"DB: {error}")
             title = "記録できませんでした"
-            message = "扉は開けていません。続く場合は管理者に連絡してください。"
+            message = "棚は開けていません。続く場合は管理者に連絡してください。"
         else:
             log.exception("想定外のエラー", exc_info=error)
             events.add_event(self.database, events.ERROR, f"想定外: {error!r}")
             title = "処理を中止しました"
-            message = "扉は開けていません。続く場合は管理者に連絡してください。"
+            message = "棚は開けていません。続く場合は管理者に連絡してください。"
 
         self.show(MessageScreen, title=title, message=message, retry=retry, retry_text=retry_text,
                   back=back, back_text=back_text)

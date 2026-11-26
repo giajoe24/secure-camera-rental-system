@@ -148,7 +148,7 @@ def make_line(parent, thickness=1, color=LINE_COLOR):
 
 class Screen(customtkinter.CTkFrame):
     idle_timeout = True        # 放っておいたらホームに戻すか
-    unlock_expected = False   # この画面の間は扉が開いていてもおかしくないか(不正な開放の検知で使う)
+    unlock_expected = False   # この画面の間は棚が開いていてもおかしくないか(不正な開放の検知で使う)
 
     def __init__(self, app):
         super().__init__(app.body, fg_color=WHITE, corner_radius=0)

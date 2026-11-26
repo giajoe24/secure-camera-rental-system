@@ -8,8 +8,8 @@ digraph G {
   b [label="② logs に「解錠」を書く\n(まだ確定していない)"];
   c [label="③ ロックを外す(unlock)"];
   d [label="④ 確定(commit)", fillcolor="#D1FADF", color="#12B76A"];
-  e1 [label="エラー画面\n記録なし・扉も開かない", fillcolor="#FEE4E2", color="#F04438"];
-  e2 [label="扉は開かない\n(③ まで行かない)", fillcolor="#FEE4E2", color="#F04438"];
+  e1 [label="エラー画面\n記録なし・棚も開かない", fillcolor="#FEE4E2", color="#F04438"];
+  e2 [label="棚は開かない\n(③ まで行かない)", fillcolor="#FEE4E2", color="#F04438"];
   e3 [label="rollback\n② の行は消える", fillcolor="#FEE4E2", color="#F04438"];
   a -> b [label="OK"]; b -> c [label="OK"]; c -> d [label="OK"];
   a -> e1 [label="NG", color="#F04438"]; b -> e2 [label="DB が壊れている\n容量がない", color="#F04438"]; c -> e3 [label="GPIO が\n動かない", color="#F04438"];

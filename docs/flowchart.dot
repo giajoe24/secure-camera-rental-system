@@ -14,10 +14,10 @@ digraph flow {
   confirm [label="確認画面\n「借りる」"];
   rconfirm [label="返却の確認画面\n(返す人・借りた人)\n「返す」"];
   unlock [label="記録「解錠」を追加 → 解錠パルス\n(失敗したら記録も取り消し)", fillcolor="#FFF1CC", color="#7A4D00"];
-  opened [label="30秒以内に\n扉が開いた?", shape=diamond, style=filled, fillcolor="#F2F4F6"];
+  opened [label="30秒以内に\n棚が開いた?", shape=diamond, style=filled, fillcolor="#F2F4F6"];
   cancel [label="記録「取り消し」を追加\n→ 取り消しの画面", fillcolor="#FCE8EC", color="#A8001F"];
-  closed [label="扉が閉まった?\n(マイクロスイッチで施錠を確認)", shape=diamond, style=filled, fillcolor="#F2F4F6"];
-  warn [label="60秒たったら\n「扉が閉まっていません」\nと警告(点滅なし)", fillcolor="#FFF1CC", color="#7A4D00"];
+  closed [label="棚が閉まった?\n(マイクロスイッチで施錠を確認)", shape=diamond, style=filled, fillcolor="#F2F4F6"];
+  warn [label="60秒たったら\n「棚が閉まっていません」\nと警告(点滅なし)", fillcolor="#FFF1CC", color="#7A4D00"];
   done [label="記録「完了」を追加\n→ 完了画面 → ホーム", fillcolor="#E3F3EA", color="#0F6B3E"];
   error [label="エラー画面\n(もう一度 / ホームへ)", fillcolor="#FCE8EC", color="#A8001F"];
 
